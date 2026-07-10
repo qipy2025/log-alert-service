@@ -1,61 +1,126 @@
 <template>
-  <div id="app">
-    <el-container>
-      <el-header style="background-color: #409eff; color: white; display: flex; align-items: center; justify-content: space-between;">
-        <h2 style="margin: 0;">设备监控平台</h2>
-        <div style="display: flex; align-items: center; gap: 16px;">
-          <span style="font-size: 14px;">WebSocket: {{ connected ? '已连接' : '未连接' }}</span>
-          <el-button @click="loadDevices" size="small" type="primary">
-            刷新设备
-          </el-button>
-        </div>
-      </el-header>
+  <div id="app" :class="{ 'sidebar-collapsed': isCollapsed }">
+    <sidebar v-model="currentPage" />
 
-      <el-main style="padding: 20px;">
-        <!-- 设备状态卡片 -->
-        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; margin-bottom: 24px;">
-          <device-card
-            v-for="device in devices"
-            :key="device.name"
-            :device="device"
-            @status-changed="handleStatusChanged"
-          />
+    <div class="main-wrapper" :class="{ 'collapsed': isCollapsed }">
+      <div class="top-bar">
+        <div class="bar-left">
+          <el-button
+            @click="toggleSidebar"
+            :icon="isCollapsed ? DArrowRight : DArrowLeft"
+            circle
+            size="small"
+        />
+          <h1 class="page-title">{{ pageTitle }}</h1>
         </div>
+        <div class="bar-right">
+          <el-tag :type="connected ? 'success' : 'info'" size="small" effect="plain">
+            WebSocket: {{ connected ? '已连接' : '未连接' }}
+          </el-tag>
+        </div>
+      </div>
 
-        <!-- 告警列表 -->
-        <alarm-list />
-      </el-main>
-    </el-container>
+      <main-content :current-page="currentPage" />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import DeviceCard from './components/DeviceCard.vue'
-import AlarmList from './components/AlarmList.vue'
-import { useDevices } from './composables/useDevices'
+import { ref, computed } from 'vue'
+import { DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
+import Sidebar from './components/Sidebar.vue'
+import MainContent from './components/MainContent.vue'
 import { useWebSocket } from './composables/useWebSocket'
-import type { Device } from './types'
 
-const { devices, loading: devicesLoading, fetchDevices } = useDevices()
 const { connected } = useWebSocket()
+const currentPage = ref('monitoring')
+const isCollapsed = ref(false)
 
-const loadDevices = async () => {
-  await fetchDevices()
-}
-
-const handleStatusChanged = (device: Device) => {
-  console.log('设备状态变更:', device)
-}
-
-// 监听设备状态变更事件
-window.addEventListener('device-status-changed', ((event: CustomEvent) => {
-  const data = event.detail
-  // 刷新设备列表
-  loadDevices()
-}) as EventListener)
-
-onMounted(() => {
-  loadDevices()
+const pageTitle = computed(() => {
+  const titles: Record<string, string> = {
+    monitoring: '设备监控',
+    notification: '通知配置',
+    devices: '设备管理',
+    history: '历史数据'
+  }
+  return titles[currentPage.value] || '设备监控'
 })
+
+const toggleSidebar = () => {
+  isCollapsed.value = !isCollapsed.value
+}
 </script>
+
+<style scoped>
+#app {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  display: flex;
+}
+
+.main-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  margin-left: 200px;
+  transition: margin-left 0.3s ease;
+  min-width: 0;
+}
+
+.main-wrapper.collapsed {
+  margin-left: 64px;
+}
+
+.top-bar {
+  height: 64px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.bar-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.bar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .main-wrapper {
+    margin-left: 64px !important;
+  }
+
+  .top-bar {
+    padding: 0 16px;
+  }
+
+  .page-title {
+    font-size: 18px;
+  }
+
+  .bar-left {
+    gap: 8px;
+  }
+}
+</style>
