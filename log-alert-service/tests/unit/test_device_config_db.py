@@ -6,10 +6,12 @@ def clean_db():
     """测试前清理"""
     DeviceConfig.delete("测试设备A")
     DeviceConfig.delete("测试设备B")
+    DeviceConfig.delete("test_update_device")
     yield
     # 测试后清理
     DeviceConfig.delete("测试设备A")
     DeviceConfig.delete("测试设备B")
+    DeviceConfig.delete("test_update_device")
 
 def test_create_device(clean_db):
     """测试创建设备配置"""
@@ -60,3 +62,32 @@ def test_get_all_devices(clean_db):
     device_names = [d["device_name"] for d in devices]
     assert "测试设备A" in device_names
     assert "测试设备B" in device_names
+
+def test_update_device_config(clean_db):
+    """测试更新设备配置"""
+    # 创建测试设备
+    DeviceConfig.create(
+        device_name="test_update_device",
+        log_path="test\\path\\",
+        auto_notify=False,
+        polling_interval=2,
+        encoding="utf-8-sig",
+        enabled=True
+    )
+
+    # 更新设备配置
+    result = DeviceConfig.update(
+        device_name="test_update_device",
+        log_path="new\\path\\",
+        enabled=False
+    )
+
+    assert result is True
+
+    # 验证更新结果
+    updated = DeviceConfig.get_by_name("test_update_device")
+    assert updated["log_path"] == "new\\path\\"
+    assert updated["enabled"] == 0  # MySQL TINYINT(1) 返回整数
+    # 其他字段应保持不变
+    assert updated["auto_notify"] == 0
+    assert updated["polling_interval"] == 2

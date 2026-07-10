@@ -105,6 +105,57 @@ class DeviceConfig:
             session.close()
 
     @staticmethod
+    def update(device_name: str, log_path: str = None, auto_notify: bool = None,
+               polling_interval: int = None, encoding: str = None, enabled: bool = None) -> bool:
+        """更新设备配置
+
+        Args:
+            device_name: 设备名称
+            log_path: 新的日志路径（可选）
+            auto_notify: 新的自动通知设置（可选）
+            polling_interval: 新的轮询间隔（可选）
+            encoding: 新的编码（可选）
+            enabled: 新的启用状态（可选）
+
+        Returns:
+            是否更新成功
+        """
+        session = get_db_session()
+        try:
+            # 构建更新字段字典
+            update_fields = {}
+            if log_path is not None:
+                update_fields['log_path'] = log_path
+            if auto_notify is not None:
+                update_fields['auto_notify'] = auto_notify
+            if polling_interval is not None:
+                update_fields['polling_interval'] = polling_interval
+            if encoding is not None:
+                update_fields['encoding'] = encoding
+            if enabled is not None:
+                update_fields['enabled'] = enabled
+
+            if not update_fields:
+                return False
+
+            # 构建 SET 子句
+            set_clause = ', '.join(f"{field} = :{field}" for field in update_fields.keys())
+            update_fields['name'] = device_name
+
+            result = session.execute(
+                text(f"UPDATE device_config SET {set_clause} WHERE device_name = :name"),
+                update_fields
+            )
+            session.commit()
+            return result.rowcount > 0
+        except Exception as e:
+            session.rollback()
+            logger.error(f"更新设备配置失败: {e}")
+            raise
+        finally:
+            session.close()
+
+    @staticmethod
     def exists(device_name: str) -> bool:
         """检查设备是否存在"""
         return DeviceConfig.get_by_name(device_name) is not None
