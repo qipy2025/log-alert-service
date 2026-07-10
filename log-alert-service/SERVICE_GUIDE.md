@@ -147,6 +147,21 @@ AI_MODEL=deepseek-v4-flash-anthropic
 - `GET /api/alarms/summary` - 获取告警统计
   - 参数: `device`, `date`
 
+### 通知配置管理
+
+- `GET /api/notification-config` - 获取通知配置
+- `PUT /api/notification-config` - 更新通知配置
+  - 请求体:
+    ```json
+    {
+      "enabled": true,
+      "allowed_levels": ["CRITICAL", "WARNING"]
+    }
+    ```
+  - `enabled`: 总开关，控制是否启用飞书通知
+  - `allowed_levels`: 允许的告警级别列表，可选值：CRITICAL, WARNING, INFO
+  - 默认状态：`enabled: false`, `allowed_levels: []`（完全禁用）
+
 ## WebSocket事件
 
 ### 客户端 → 服务器

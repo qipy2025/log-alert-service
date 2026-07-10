@@ -248,6 +248,32 @@ GET /api/alarms?device=Device-001&level=critical&limit=50&offset=0
 GET /api/alarms/summary?device=Device-001&date=2026-07-10
 ```
 
+### 通知配置管理
+
+**获取通知配置**
+```http
+GET /api/notification-config
+```
+
+**更新通知配置**
+```http
+PUT /api/notification-config
+Content-Type: application/json
+
+{
+  "enabled": true,
+  "allowed_levels": ["CRITICAL", "WARNING"]
+}
+```
+
+**配置说明：**
+- `enabled`: 总开关，控制是否启用飞书通知
+- `allowed_levels`: 允许的告警级别列表，可选值：CRITICAL, WARNING, INFO
+- 默认状态：`enabled: false`, `allowed_levels: []`（完全禁用）
+
+**WebSocket 事件：**
+- `notification_config_updated` - 配置更新时实时推送到所有连接的客户端
+
 ## 故障排查
 
 ### 常见问题
