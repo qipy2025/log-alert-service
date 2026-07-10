@@ -67,3 +67,27 @@ def broadcast_device_status_change(device_name, old_status, new_status, changed_
         logger.warning(f"无法广播状态变更（Flask应用未运行）: {e}")
     except Exception as e:
         logger.error(f"广播状态变更失败: {e}")
+
+
+def broadcast_config_update(config):
+    """广播通知配置更新事件
+
+    当通知配置被更新时，向所有连接的 WebSocket 客户端广播更新
+
+    Args:
+        config: 配置字典，包含 'enabled' 和 'allowed_levels'
+    """
+    try:
+        from flask import current_app
+        socketio = current_app.extensions.get('socketio')
+        if socketio:
+            socketio.emit('notification_config_updated', {
+                'type': 'notification_config_updated',
+                'data': config
+            }, broadcast=True)
+            logger.info(f"通知配置更新已广播: enabled={config['enabled']}, levels={config['allowed_levels']}")
+    except RuntimeError as e:
+        # 当没有Flask应用上下文时，记录警告但不抛出异常
+        logger.warning(f"无法广播配置更新（Flask应用未运行）: {e}")
+    except Exception as e:
+        logger.error(f"广播配置更新失败: {e}")
