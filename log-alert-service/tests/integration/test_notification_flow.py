@@ -152,7 +152,8 @@ class TestNotificationFlow:
             config.allowed_levels and
             sample_alarm_event.level.value in config.allowed_levels
         )
-        assert should_send is False, "空的 allowed_levels 应该过滤所有告警"
+        # 空列表是 falsy，所以整个表达式为空列表（falsy但不等于False）
+        assert not should_send, "空的 allowed_levels 应该过滤所有告警"
         print("✓ 空级别列表过滤测试通过")
 
     @patch('src.db.notification_config_db.get_db_session')
@@ -193,14 +194,16 @@ class TestNotificationFlow:
         # 4. 测试 CRITICAL 级别告警被允许
         should_send_critical = (
             config and config.enabled and
-            (not config.allowed_levels or critical_event.level.value in config.allowed_levels)
+            config.allowed_levels and
+            critical_event.level.value in config.allowed_levels
         )
         assert should_send_critical is True, "CRITICAL 应该被允许发送"
 
         # 5. 测试 WARNING 级别告警被允许
         should_send_warning = (
             config and config.enabled and
-            (not config.allowed_levels or warning_event.level.value in config.allowed_levels)
+            config.allowed_levels and
+            warning_event.level.value in config.allowed_levels
         )
         assert should_send_warning is True, "WARNING 应该被允许发送"
 
@@ -218,7 +221,8 @@ class TestNotificationFlow:
 
         should_send_info = (
             config and config.enabled and
-            (not config.allowed_levels or info_event.level.value in config.allowed_levels)
+            config.allowed_levels and
+            info_event.level.value in config.allowed_levels
         )
         assert should_send_info is False, "INFO 应该被过滤"
         print("✓ 多级别配置综合测试通过")
