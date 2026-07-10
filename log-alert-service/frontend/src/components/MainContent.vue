@@ -37,17 +37,7 @@
 
       <!-- 设备管理页面 -->
       <div v-show="currentPage === 'devices'" class="page-view">
-        <div class="devices-management">
-          <h2>设备管理</h2>
-          <el-alert
-            title="设备管理功能"
-            type="info"
-            :closable="false"
-            show-icon
-          >
-            这里可以添加、删除和配置设备。该功能正在开发中...
-          </el-alert>
-        </div>
+        <device-management />
       </div>
 
       <!-- 历史数据页面 -->
@@ -74,6 +64,7 @@ import DeviceCard from './DeviceCard.vue'
 import AlarmList from './AlarmList.vue'
 import NotificationConfig from './NotificationConfig.vue'
 import Breadcrumb from './Breadcrumb.vue'
+import DeviceManagement from '../views/DeviceManagement.vue'
 import { useDevices } from '../composables/useDevices'
 import { useWebSocket } from '../composables/useWebSocket'
 import type { Device } from '../types'
