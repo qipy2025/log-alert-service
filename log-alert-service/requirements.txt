@@ -5,3 +5,13 @@ apscheduler>=3.10.0
 python-dotenv>=1.0.0
 pytest>=8.0
 pytest-mock>=3.0
+
+# Web框架依赖
+flask[async]==2.3.3
+flask-cors==4.0.0
+flask-socketio==5.3.6
+eventlet==0.33.3
+
+# 数据库依赖
+pymysql==1.1.0
+sqlalchemy==2.0.21
