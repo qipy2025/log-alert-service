@@ -46,6 +46,9 @@ class AlertService:
         # 初始化组件
         self._init_components()
 
+        # 初始化通知配置（如果不存在）
+        self._init_notification_config()
+
     def _init_components(self):
         """初始化各组件"""
         # 告警去重
@@ -84,6 +87,46 @@ class AlertService:
 
         # 当前监控的日期目录
         self._current_log_dir: str = ""
+
+    def _init_notification_config(self):
+        """初始化通知配置（确保默认配置存在）"""
+        try:
+            from src.db.notification_config_db import init_default_config
+            created = init_default_config()
+            if created:
+                logger.info("已创建默认通知配置：禁用状态")
+        except Exception as e:
+            logger.warning(f"初始化通知配置失败（不影响服务启动）: {e}")
+
+    def _should_send_notification(self, event) -> bool:
+        """检查配置是否允许发送此告警
+
+        Args:
+            event: 告警事件对象
+
+        Returns:
+            True 如果允许发送，False 如果不允许发送
+        """
+        try:
+            from src.db.notification_config_db import get_notification_config
+            from src.models.notification_config import NotificationConfig
+
+            config = get_notification_config()
+
+            # 如果配置不存在或总开关关闭，不发送
+            if not config or not config.enabled:
+                return False
+
+            # 检查告警级别是否在允许列表中
+            # 如果 allowed_levels 为空，则所有级别都被过滤
+            if config.allowed_levels and event.level.value not in config.allowed_levels:
+                return False
+
+            return True
+        except Exception as e:
+            logger.error(f"检查通知配置失败: {e}")
+            # 安全失败：配置有问题时不发送通知
+            return False
 
     def _on_alarm(self, event):
         """告警回调"""
@@ -140,12 +183,15 @@ class AlertService:
             except Exception as ws_error:
                 logger.warning(f"WebSocket广播失败（Web服务可能未启动）: {ws_error}")
 
-            # 7. 推送飞书
-            success = self.notifier.send_alarm(event, analysis)
-            if success:
-                logger.info(f"告警推送成功: {event.alarm_text}")
+            # 7. 推送飞书（添加配置检查）
+            if self._should_send_notification(event):
+                success = self.notifier.send_alarm(event, analysis)
+                if success:
+                    logger.info(f"告警推送成功: {event.alarm_text}")
+                else:
+                    logger.error(f"告警推送失败: {event.alarm_text}")
             else:
-                logger.error(f"告警推送失败: {event.alarm_text}")
+                logger.debug(f"告警被配置过滤: {event.alarm_text}")
 
         except Exception as e:
             logger.exception(f"处理告警时出错: {e}")
