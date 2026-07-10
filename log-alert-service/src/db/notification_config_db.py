@@ -6,12 +6,26 @@ from typing import Optional, List
 from src.db.mysql import get_db_session
 from src.models.notification_config import NotificationConfig
 
+# 常量定义
+DEFAULT_CONFIG_ID = 1
+
+
+class DBRecord:
+    """数据库记录对象"""
+    def __init__(self, id, enabled, allowed_levels):
+        self.id = id
+        self.enabled = enabled
+        self.allowed_levels = allowed_levels
+
 
 def get_notification_config() -> Optional[NotificationConfig]:
     """获取当前通知配置
 
     Returns:
         NotificationConfig 实例，如果不存在则返回 None
+
+    Raises:
+        RuntimeError: 数据库操作失败时抛出
     """
     session = get_db_session()
     try:
@@ -21,18 +35,12 @@ def get_notification_config() -> Optional[NotificationConfig]:
         ).fetchone()
 
         if result:
-            # 创建一个简单的对象来模拟数据库记录
-            class Record:
-                def __init__(self, id, enabled, allowed_levels):
-                    self.id = id
-                    self.enabled = enabled
-                    self.allowed_levels = allowed_levels
-
-            record = Record(result[0], result[1], result[2])
+            record = DBRecord(result[0], result[1], result[2])
             return NotificationConfig.from_db(record)
         return None
     except Exception as e:
-        raise e
+        # 添加有意义的上下文信息，保留原始堆栈
+        raise RuntimeError(f"Failed to get notification config: {e}") from e
     finally:
         session.close()
 
@@ -48,7 +56,7 @@ def update_notification_config(enabled: bool, allowed_levels: List[str]) -> Noti
         更新后的 NotificationConfig 实例
 
     Raises:
-        Exception: 数据库操作失败时抛出异常
+        RuntimeError: 数据库操作失败时抛出
     """
     session = get_db_session()
     try:
@@ -65,17 +73,29 @@ def update_notification_config(enabled: bool, allowed_levels: List[str]) -> Noti
         )
         session.commit()
 
-        # 返回更新后的配置
-        return get_notification_config()
+        # 直接构建返回对象，避免重复查询
+        return NotificationConfig(
+            id=DEFAULT_CONFIG_ID,
+            enabled=enabled,
+            allowed_levels=allowed_levels
+        )
     except Exception as e:
         session.rollback()
-        raise e
+        raise RuntimeError(f"Failed to update notification config: {e}") from e
     finally:
         session.close()
 
 
-def init_default_config():
-    """初始化默认配置（如果不存在）"""
+def init_default_config() -> bool:
+    """初始化默认配置（如果不存在）
+
+    Returns:
+            True 如果创建了新配置
+            False 如果配置已存在
+
+    Raises:
+        RuntimeError: 数据库操作失败时抛出
+    """
     session = get_db_session()
     try:
         # 检查是否已存在配置
@@ -96,6 +116,6 @@ def init_default_config():
         return False
     except Exception as e:
         session.rollback()
-        raise e
+        raise RuntimeError(f"Failed to init default config: {e}") from e
     finally:
         session.close()
