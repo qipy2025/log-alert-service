@@ -316,3 +316,117 @@ def update_notification_config_api():
     except Exception as e:
         logger.error(f"更新通知配置失败: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+# ==================== 设备管理 API ====================
+
+@api_bp.route('/devices/config', methods=['GET'])
+def get_devices_config():
+    """获取设备配置列表"""
+    from src.device_manager import DeviceManager
+
+    try:
+        device_manager = DeviceManager()
+        devices = device_manager.get_all_devices()
+        return jsonify({'devices': devices})
+    except Exception as e:
+        logger.error(f"获取设备配置失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/devices', methods=['POST'])
+def add_device():
+    """添加新设备"""
+    from src.device_manager import DeviceManager
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
+
+        # 验证必填字段
+        required_fields = ['device_name', 'log_path']
+        for field in required_fields:
+            if field not in data or not data[field]:
+                return jsonify({'error': f'Missing required field: {field}'}), 400
+
+        device_name = data['device_name']
+        log_path = data['log_path']
+        enabled = data.get('enabled', True)
+
+        # 添加设备
+        device_manager = DeviceManager()
+        device = device_manager.add_device({
+            'device_name': device_name,
+            'log_path': log_path,
+            'enabled': enabled
+        })
+
+        return jsonify({
+            'success': True,
+            'device': device
+        }), 201
+
+    except ValueError as e:
+        # 业务逻辑错误（如设备名称已存在）
+        return jsonify({'error': str(e)}), 409
+    except Exception as e:
+        logger.error(f"添加设备失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/devices/<device_name>', methods=['PUT'])
+def update_device(device_name):
+    """更新设备配置"""
+    from src.device_manager import DeviceManager
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
+
+        device_manager = DeviceManager()
+        device = device_manager.update_device(device_name, data)
+
+        return jsonify({
+            'success': True,
+            'device': device
+        })
+
+    except ValueError as e:
+        # 业务逻辑错误（如设备不存在）
+        error_msg = str(e)
+        if '设备不存在' in error_msg:
+            return jsonify({'error': error_msg}), 404
+        else:
+            return jsonify({'error': error_msg}), 400
+    except Exception as e:
+        logger.error(f"更新设备失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/devices/<device_name>', methods=['DELETE'])
+def delete_device(device_name):
+    """删除设备"""
+    from src.device_manager import DeviceManager
+
+    try:
+        device_manager = DeviceManager()
+        device_manager.delete_device(device_name)
+
+        return jsonify({
+            'success': True,
+            'message': '设备已删除'
+        })
+
+    except ValueError as e:
+        # 设备不存在
+        return jsonify({'error': str(e)}), 404
+    except RuntimeError as e:
+        # 设备正在运行
+        return jsonify({'error': str(e)}), 409
+    except Exception as e:
+        logger.error(f"删除设备失败: {e}")
+        return jsonify({'error': str(e)}), 500
