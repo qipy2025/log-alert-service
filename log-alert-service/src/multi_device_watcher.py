@@ -60,38 +60,38 @@ class MultiDeviceWatcher:
             logger.error("设备配置缺少 device_name")
             return
 
+        # 如果设备已在监控，先停止（在锁外执行）
+        need_stop = False
         with self._lock:
-            # 如果设备已在监控，先停止
             if device_name in self.device_monitors:
                 logger.info(f"设备 {device_name} 已在监控，先停止旧监控")
-                self.stop_device(device_name)
+                need_stop = True
 
-            try:
-                # 构建日志文件路径（添加日期子目录）
-                log_path = self._build_log_path(device_config.get("log_path", ""))
+        if need_stop:
+            self.stop_device(device_name)
 
-                # 创建 LogWatcher
-                watcher = LogWatcher(
-                    log_dir=log_path,
-                    on_alarm=self._create_device_alarm_callback(device_name),
-                    polling_interval=device_config.get("polling_interval", 2),
-                    encoding=device_config.get("encoding", "utf-8-sig")
-                )
+        # 构建日志文件路径（添加日期子目录）
+        log_path = self._build_log_path(device_config.get("log_path", ""))
 
-                # 创建 DeviceMonitorInfo
-                monitor_info = DeviceMonitorInfo(device_config, watcher)
+        # 创建 LogWatcher（锁外执行）
+        watcher = LogWatcher(
+            log_dir=log_path,
+            on_alarm=self._create_device_alarm_callback(device_name),
+            polling_interval=device_config.get("polling_interval", 2),
+            encoding=device_config.get("encoding", "utf-8-sig")
+        )
 
-                # 启动监控
-                monitor_info.start()
+        # 创建 DeviceMonitorInfo（锁外执行）
+        monitor_info = DeviceMonitorInfo(device_config, watcher)
 
-                # 添加到监控列表
-                self.device_monitors[device_name] = monitor_info
+        # 启动监控（锁外执行）
+        monitor_info.start()
 
-                logger.info(f"✅ 设备 {device_name} 监控已启动: {log_path}")
+        # 添加到监控列表（锁内执行）
+        with self._lock:
+            self.device_monitors[device_name] = monitor_info
 
-            except Exception as e:
-                logger.error(f"❌ 启动设备 {device_name} 监控失败: {e}")
-                raise
+        logger.info(f"✅ 设备 {device_name} 监控已启动: {log_path}")
 
     def stop_device(self, device_name: str):
         """停止单个设备的监控
@@ -100,22 +100,30 @@ class MultiDeviceWatcher:
             device_name: 设备名称
         """
         with self._lock:
-            if device_name not in self.device_monitors:
-                logger.warning(f"设备 {device_name} 未在监控中")
-                return
+            self._stop_device_unlocked(device_name)
 
-            try:
-                monitor_info = self.device_monitors[device_name]
-                monitor_info.stop()
+    def _stop_device_unlocked(self, device_name: str):
+        """停止单个设备的监控（无锁版本，必须在持有 self._lock 时调用）
 
-                # 从监控列表移除
-                del self.device_monitors[device_name]
+        Args:
+            device_name: 设备名称
+        """
+        if device_name not in self.device_monitors:
+            logger.warning(f"设备 {device_name} 未在监控中")
+            return
 
-                logger.info(f"⏹️  设备 {device_name} 监控已停止")
+        try:
+            monitor_info = self.device_monitors[device_name]
+            monitor_info.stop()
 
-            except Exception as e:
-                logger.error(f"❌ 停止设备 {device_name} 监控失败: {e}")
-                raise
+            # 从监控列表移除
+            del self.device_monitors[device_name]
+
+            logger.info(f"⏹️  设备 {device_name} 监控已停止")
+
+        except Exception as e:
+            logger.error(f"❌ 停止设备 {device_name} 监控失败: {e}")
+            raise
 
     def start_all(self, devices: List[Dict[str, Any]]):
         """启动所有设备的监控
@@ -181,8 +189,6 @@ class MultiDeviceWatcher:
         Returns:
             完整的日志目录路径
         """
-        from datetime import datetime
-
         # 添加日期子目录
         today_str = datetime.now().strftime("%Y-%m-%d")
         full_path = str(Path(base_log_path) / today_str)
@@ -205,11 +211,15 @@ class MultiDeviceWatcher:
             if not event.module_name:
                 event.module_name = device_name
 
-            # 调用主告警回调
-            self.on_alarm(event)
+            # 调用主告警回调（在锁外，避免死锁）
+            try:
+                self.on_alarm(event)
+            except Exception as e:
+                logger.error(f"告警回调异常（设备 {device_name}）: {e}", exc_info=True)
 
-            # 增加该设备的告警计数
-            if device_name in self.device_monitors:
-                self.device_monitors[device_name].increment_alarm_count()
+            # 增加该设备的告警计数（加锁保护）
+            with self._lock:
+                if device_name in self.device_monitors:
+                    self.device_monitors[device_name].increment_alarm_count()
 
         return callback
