@@ -162,6 +162,42 @@ AI_MODEL=deepseek-v4-flash-anthropic
   - `allowed_levels`: 允许的告警级别列表，可选值：CRITICAL, WARNING, INFO
   - 默认状态：`enabled: false`, `allowed_levels: []`（完全禁用）
 
+### 设备配置管理
+
+- `GET /api/devices/config` - 获取所有设备配置
+  - 返回设备配置列表（设备名称、日志路径、轮询间隔、编码、启用状态等）
+
+- `POST /api/devices` - 添加新设备
+  - 请求体:
+    ```json
+    {
+      "device_name": "新设备",
+      "log_path": "新设备\\日志\\",
+      "enabled": true
+    }
+    ```
+  - 返回: `{"success": true, "device": {...}}`
+
+- `PUT /api/devices/{device_name}` - 更新设备配置
+  - URL参数: `device_name` - 当前设备名称
+  - 请求体:
+    ```json
+    {
+      "device_name": "更新后的名称",
+      "log_path": "新路径\\",
+      "enabled": false
+    }
+    ```
+  - 可修改设备名称（会自动处理删除旧设备、创建新设备）
+  - 返回: `{"success": true, "device": {...}}`
+
+- `DELETE /api/devices/{device_name}` - 删除设备
+  - URL参数: `device_name` - 设备名称
+  - 删除设备时历史告警记录会被保留
+  - 如果设备正在运行，需要先停止监控
+  - 返回: `{"success": true, "message": "设备已删除"}`
+
+
 ## WebSocket事件
 
 ### 客户端 → 服务器
