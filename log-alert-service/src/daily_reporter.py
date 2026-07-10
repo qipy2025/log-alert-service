@@ -2,7 +2,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Optional
 
-from .models import AlarmEvent, DailySummary
+from src.data_models import AlarmEvent, DailySummary
 from .ai_analyzer import AIAnalyzer
 from .log_parser import scan_file_for_alarms
 
@@ -50,7 +50,7 @@ class DailyReporter:
                 combined_context = "\n".join(
                     [f"[{a.timestamp}] {a.alarm_text}" for a in alarms[-10:]]
                 )
-                from .models import AlarmEvent as TempEvent
+                from src.data_models import AlarmEvent as TempEvent
                 from datetime import datetime as dt
 
                 mock_event = TempEvent(

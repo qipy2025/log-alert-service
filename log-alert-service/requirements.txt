@@ -15,3 +15,6 @@ eventlet==0.33.3
 # 数据库依赖
 pymysql==1.1.0
 sqlalchemy==2.0.21
+
+# AI分析依赖
+openai>=1.0.0

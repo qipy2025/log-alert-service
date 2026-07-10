@@ -234,18 +234,7 @@ def get_alarm_summary():
 def push_device_status_change(device_name, old_status, new_status, changed_by):
     """推送设备状态变更（WebSocket）"""
     try:
-        from src.web.app import current_app
-        socketio = current_app.extensions.get('socketio')
-        if socketio:
-            socketio.emit('device_status_changed', {
-                'type': 'device_status_changed',
-                'data': {
-                    'device_name': device_name,
-                    'old_status': old_status,
-                    'new_status': new_status,
-                    'changed_by': changed_by,
-                    'timestamp': datetime.now().isoformat()
-                }
-            }, broadcast=True)
+        from src.web.socketio import broadcast_device_status_change
+        broadcast_device_status_change(device_name, old_status, new_status, changed_by)
     except Exception as e:
         logger.error(f"WebSocket推送失败: {e}")

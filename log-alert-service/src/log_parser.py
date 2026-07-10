@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from .models import AlarmLevel, AlarmSource, AlarmEvent
+from src.data_models import AlarmLevel, AlarmSource, AlarmEvent
 
 
 # Default.log 日志行正则

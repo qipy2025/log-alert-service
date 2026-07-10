@@ -35,9 +35,13 @@ logger = logging.getLogger(__name__)
 class AlertService:
     """告警推送服务主类"""
 
-    def __init__(self, config_path: str = "config.yaml"):
+    def __init__(self, config_path: str = "config.yaml", enable_web: bool = False):
         self.config = ConfigManager(config_path)
         self._running = False
+        self.enable_web = enable_web
+        self.web_app = None
+        self.web_socketio = None
+        self.web_thread = None
 
         # 初始化组件
         self._init_components()
@@ -107,7 +111,36 @@ class AlertService:
             # 4. 记录到日报
             self.reporter.record_alarm(event)
 
-            # 5. 推送飞书
+            # 5. 存储告警到数据库
+            try:
+                from src.alarm_dedup import store_alarm_to_db
+                store_alarm_to_db(event)
+                logger.debug("告警已存储到数据库")
+            except Exception as db_error:
+                logger.warning(f"告警存储失败（数据库可能未配置）: {db_error}")
+
+            # 6. 通过WebSocket实时推送（如果Web服务正在运行）
+            try:
+                from src.web.socketio import broadcast_alarm
+                alarm_data = {
+                    'device_name': event.module_name,
+                    'alarm_level': event.level.value,
+                    'alarm_text': event.alarm_text,
+                    'timestamp': event.timestamp.isoformat(),
+                    'daily_count': event.daily_count,
+                    'analysis': {
+                        'root_cause': analysis.root_cause,
+                        'severity': analysis.severity,
+                        'suggestion': analysis.suggestion,
+                        'related_module': analysis.related_module
+                    } if analysis else None
+                }
+                broadcast_alarm(alarm_data)
+                logger.debug("告警已通过WebSocket广播")
+            except Exception as ws_error:
+                logger.warning(f"WebSocket广播失败（Web服务可能未启动）: {ws_error}")
+
+            # 7. 推送飞书
             success = self.notifier.send_alarm(event, analysis)
             if success:
                 logger.info(f"告警推送成功: {event.alarm_text}")
@@ -128,6 +161,57 @@ class AlertService:
             logger.info(f"每日汇总推送成功: {yesterday}")
         except Exception as e:
             logger.exception(f"发送每日汇总时出错: {e}")
+
+    def _start_web_service(self):
+        """在独立线程中启动Web服务"""
+        try:
+            import threading
+            from src.web.app import create_app
+            import os
+
+            logger.info("启动Web服务...")
+
+            # 创建Flask应用
+            self.web_app = create_app()
+            self.web_socketio = self.web_app.extensions['socketio']
+
+            # 在独立线程中运行Web服务
+            def run_web():
+                host = os.getenv('WEB_HOST', '0.0.0.0')
+                port = int(os.getenv('WEB_PORT', 5000))
+                debug = os.getenv('DEBUG', 'False').lower() == 'true'
+
+                logger.info(f"Web服务地址: http://localhost:{port}")
+                logger.info(f"WebSocket地址: ws://localhost:{port}")
+
+                self.web_socketio.run(
+                    self.web_app,
+                    host=host,
+                    port=port,
+                    debug=debug,
+                    allow_unsafe_werkzeug=True
+                )
+
+            self.web_thread = threading.Thread(target=run_web, daemon=True)
+            self.web_thread.start()
+
+            logger.info("✅ Web服务已启动（后台运行）")
+
+        except Exception as e:
+            logger.error(f"❌ Web服务启动失败: {e}")
+            self.web_app = None
+            self.web_socketio = None
+            self.web_thread = None
+
+    def _stop_web_service(self):
+        """停止Web服务"""
+        if self.web_socketio:
+            try:
+                # Flask-SocketIO没有直接停止的方法
+                # Web服务会随主进程退出
+                logger.info("Web服务已停止")
+            except Exception as e:
+                logger.error(f"停止Web服务失败: {e}")
 
     def start(self):
         """启动服务"""
@@ -180,6 +264,10 @@ class AlertService:
             self.scheduler.start()
             logger.info(f"每日汇总定时任务已设定: {schedule_time}")
 
+        # 启动Web服务（如果启用）
+        if self.enable_web:
+            self._start_web_service()
+
         self._running = True
         logger.info("服务启动完成 ✅")
 
@@ -187,6 +275,11 @@ class AlertService:
         """停止服务"""
         logger.info("正在停止服务...")
         self._running = False
+
+        # 停止Web服务
+        if self.enable_web:
+            self._stop_web_service()
+
         if hasattr(self, "watcher"):
             self.watcher.stop()
         if hasattr(self, "scheduler") and self.scheduler.running:
@@ -195,9 +288,15 @@ class AlertService:
 
 
 def main():
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "config.yaml"
+    """主函数"""
+    import argparse
 
-    service = AlertService(config_path)
+    parser = argparse.ArgumentParser(description='设备日志AI告警推送服务')
+    parser.add_argument('--config', '-c', default='config.yaml', help='配置文件路径')
+    parser.add_argument('--web', '-w', action='store_true', help='同时启动Web服务（API + WebSocket）')
+    args = parser.parse_args()
+
+    service = AlertService(args.config, enable_web=args.web)
 
     def signal_handler(sig, frame):
         logger.info("收到停止信号")

@@ -1,6 +1,54 @@
 import time
 from typing import Optional
-from .models import AlarmEvent
+from src.data_models import AlarmEvent
+from src.models.alarm import AlarmRecord
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def store_alarm_to_db(event: AlarmEvent, analysis=None) -> None:
+    """存储告警到数据库"""
+    from src.db.mysql import get_db_session
+    from src.db.cache import increment_alarm_count
+
+    session = get_db_session()
+    try:
+        # 映射AlarmEvent到AlarmRecord
+        device_name = event.module_name  # 使用module_name作为设备名
+        alarm_level = str(event.level.value).upper()  # 转换为字符串
+
+        # 构建AI分析JSON
+        ai_analysis_json = None
+        if analysis:
+            import json
+            ai_analysis_json = json.dumps({
+                'root_cause': analysis.root_cause,
+                'severity': analysis.severity,
+                'suggestion': analysis.suggestion,
+                'related_module': analysis.related_module,
+                'probable_time_to_resolve': analysis.probable_time_to_resolve
+            }, ensure_ascii=False)
+
+        alarm = AlarmRecord(
+            device_name=device_name,
+            alarm_level=alarm_level,
+            alarm_content=event.alarm_text,
+            ai_analysis=ai_analysis_json,
+            log_timestamp=event.timestamp
+        )
+        session.add(alarm)
+        session.commit()
+
+        # 更新内存缓存计数
+        increment_alarm_count(device_name)
+
+        logger.info(f"告警已存储: {device_name} - {alarm_level}")
+    except Exception as e:
+        logger.error(f"存储告警失败: {e}")
+        session.rollback()
+    finally:
+        session.close()
 
 
 class AlarmDedup:

@@ -7,7 +7,20 @@ from watchdog.events import FileSystemEventHandler, FileModifiedEvent
 from watchdog.observers import Observer
 
 from .log_parser import parse_log_line, detect_alarm_level, create_alarm_event
-from .models import AlarmEvent
+from src.data_models import AlarmEvent
+
+
+def check_device_enabled(device_name: str) -> bool:
+    """检查设备是否启用监控"""
+    try:
+        from src.db.cache import get_device_status
+        status_data = get_device_status(device_name)
+        status = status_data.get('status', 'RUNNING')
+        return status == 'RUNNING'
+    except Exception as e:
+        logger = __import__('logging').getLogger(__name__)
+        logger.error(f"检查设备状态失败: {e}")
+        return True  # 默认启用
 
 
 class LogFileHandler(FileSystemEventHandler):

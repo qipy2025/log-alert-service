@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 import requests
 
-from .models import AlarmEvent, AlarmLevel, AnalysisResult, DailySummary
+from src.data_models import AlarmEvent, AlarmLevel, AnalysisResult, DailySummary
 
 
 class FeishuNotifier:
@@ -155,6 +155,15 @@ class FeishuNotifier:
         analysis: Optional[AnalysisResult] = None,
     ) -> bool:
         """推送告警通知到所有生产群"""
+        # 检查设备是否启用（如果有设备信息）
+        device_name = getattr(event, 'device_name', None)
+        if device_name:
+            from src.file_watcher import check_device_enabled
+            if not check_device_enabled(device_name):
+                logger = __import__('logging').getLogger(__name__)
+                logger.info(f"设备 {device_name} 已暂停，跳过飞书推送")
+                return True  # 返回True避免被标记为失败
+
         card = self._build_alarm_card(event, analysis)
         chat_ids = self._get_target_chats("production")
 

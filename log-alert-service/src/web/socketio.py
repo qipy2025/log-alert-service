@@ -28,26 +28,42 @@ def register_socketio_events(socketio):
 
 def broadcast_alarm(alarm_data):
     """广播告警事件到所有连接的客户端"""
-    from src.web.app import current_app
-    socketio = current_app.extensions.get('socketio')
-    if socketio:
-        socketio.emit('alarm', {
-            'type': 'alarm',
-            'data': alarm_data
-        }, broadcast=True)
+    try:
+        from flask import current_app
+        socketio = current_app.extensions.get('socketio')
+        if socketio:
+            socketio.emit('alarm', {
+                'type': 'alarm',
+                'data': alarm_data
+            }, broadcast=True)
+    except RuntimeError as e:
+        # 当没有Flask应用上下文时，记录警告但不抛出异常
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"无法广播告警（Flask应用未运行）: {e}")
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"广播告警失败: {e}")
 
 def broadcast_device_status_change(device_name, old_status, new_status, changed_by):
     """广播设备状态变更事件"""
-    from src.web.app import current_app
-    socketio = current_app.extensions.get('socketio')
-    if socketio:
-        socketio.emit('device_status_changed', {
-            'type': 'device_status_changed',
-            'data': {
-                'device_name': device_name,
-                'old_status': old_status,
-                'new_status': new_status,
-                'changed_by': changed_by,
-                'timestamp': datetime.now().isoformat()
-            }
-        }, broadcast=True)
+    try:
+        from flask import current_app
+        socketio = current_app.extensions.get('socketio')
+        if socketio:
+            socketio.emit('device_status_changed', {
+                'type': 'device_status_changed',
+                'data': {
+                    'device_name': device_name,
+                    'old_status': old_status,
+                    'new_status': new_status,
+                    'changed_by': changed_by,
+                    'timestamp': datetime.now().isoformat()
+                }
+            }, broadcast=True)
+    except RuntimeError as e:
+        # 当没有Flask应用上下文时，记录警告但不抛出异常
+        logger.warning(f"无法广播状态变更（Flask应用未运行）: {e}")
+    except Exception as e:
+        logger.error(f"广播状态变更失败: {e}")

@@ -3,7 +3,7 @@ from typing import Optional
 
 import requests
 
-from .models import AlarmEvent, AnalysisResult
+from src.data_models import AlarmEvent, AnalysisResult
 
 
 SYSTEM_PROMPT = """你是一个设备故障诊断专家。分析以下日志片段，找出告警的根本原因，

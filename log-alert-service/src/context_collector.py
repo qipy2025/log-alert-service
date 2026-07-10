@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Optional
 
 from .log_parser import parse_log_line, detect_alarm_level
-from .models import AlarmEvent
+from src.data_models import AlarmEvent
 
 
 def read_lines(
