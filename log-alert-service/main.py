@@ -8,6 +8,7 @@
 import logging
 import signal
 import sys
+import threading
 from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -44,6 +45,11 @@ class AlertService:
         self.web_app = None
         self.web_socketio = None
         self.web_thread = None
+
+        # 轮询相关
+        self._polling_stop_event = None
+        self._polling_thread = None
+        self._polling_interval = self.config.get("device_polling.interval", 30)  # 默认30秒
 
         # 初始化组件
         self._init_components()
@@ -300,6 +306,188 @@ class AlertService:
             except Exception as e:
                 logger.error(f"停止Web服务失败: {e}")
 
+    def _poll_device_changes(self):
+        """轮询设备配置变更
+
+        后台线程方法，定期检查数据库中的设备配置变更，
+        自动启动新设备、停止已禁用设备、处理配置变更。
+        """
+        logger.info(f"设备轮询线程已启动（间隔: {self._polling_interval}秒）")
+
+        while not self._polling_stop_event.is_set():
+            try:
+                # 等待轮询间隔或停止信号
+                self._polling_stop_event.wait(timeout=self._polling_interval)
+
+                # 如果收到停止信号，退出轮询
+                if self._polling_stop_event.is_set():
+                    break
+
+                logger.debug("开始检查设备配置变更...")
+
+                # 1. 从数据库加载最新的启用设备列表
+                db_devices = self.multi_device_watcher.load_devices_from_db()
+
+                # 2. 获取当前活动设备列表
+                active_devices = self.multi_device_watcher.get_active_devices()
+
+                # 3. 构建设备配置字典（便于查找）
+                db_device_map = {d["device_name"]: d for d in db_devices}
+
+                # 4. 检测新增设备（在DB中启用但未在活动列表中）
+                new_devices = []
+                for device_config in db_devices:
+                    device_name = device_config["device_name"]
+                    if device_name not in active_devices:
+                        new_devices.append(device_config)
+
+                if new_devices:
+                    logger.info(f"检测到 {len(new_devices)} 个新设备")
+                    for device_config in new_devices:
+                        device_name = device_config["device_name"]
+                        try:
+                            self.multi_device_watcher.start_device(device_config)
+                            logger.info(f"✅ 自动启动新设备: {device_name}")
+                        except Exception as e:
+                            logger.error(f"❌ 启动新设备 {device_name} 失败: {e}")
+
+                # 5. 检测移除设备（在活动列表但DB中未启用）
+                removed_devices = []
+                for device_name in active_devices:
+                    if device_name not in db_device_map:
+                        removed_devices.append(device_name)
+
+                if removed_devices:
+                    logger.info(f"检测到 {len(removed_devices)} 个被移除的设备")
+                    for device_name in removed_devices:
+                        try:
+                            self.multi_device_watcher.stop_device(device_name)
+                            logger.info(f"⏹️  自动停止已禁用设备: {device_name}")
+                        except Exception as e:
+                            logger.error(f"❌ 停止设备 {device_name} 失败: {e}")
+
+                # 6. 检测配置变更（设备名称在两边都有，但配置发生变化）
+                changed_devices = []
+                for device_config in db_devices:
+                    device_name = device_config["device_name"]
+                    if device_name in active_devices:
+                        # 获取当前设备状态
+                        current_status = self.multi_device_watcher.get_device_status(device_name)
+                        if current_status:
+                            # 比较关键配置字段
+                            current_config = current_status.get("config", {})
+
+                            # 检查配置是否变更（比较 log_path, polling_interval, encoding）
+                            if (device_config.get("log_path") != current_config.get("log_path") or
+                                device_config.get("polling_interval") != current_config.get("polling_interval") or
+                                device_config.get("encoding") != current_config.get("encoding")):
+
+                                changed_devices.append(device_config)
+
+                if changed_devices:
+                    logger.info(f"检测到 {len(changed_devices)} 个配置变更的设备")
+                    for device_config in changed_devices:
+                        device_name = device_config["device_name"]
+                        try:
+                            # 先停止旧监控
+                            self.multi_device_watcher.stop_device(device_name)
+                            # 再启动新监控
+                            self.multi_device_watcher.start_device(device_config)
+                            logger.info(f"🔄 重启配置变更设备: {device_name}")
+                        except Exception as e:
+                            logger.error(f"❌ 重启设备 {device_name} 失败: {e}")
+
+                if not new_devices and not removed_devices and not changed_devices:
+                    logger.debug("未检测到设备配置变更")
+
+            except Exception as e:
+                logger.error(f"设备轮询出错: {e}", exc_info=True)
+                # 即使出错也继续下一轮轮询
+
+        logger.info("设备轮询线程已退出")
+
+    def _start_polling_thread(self):
+        """启动设备变更轮询线程"""
+        if self._polling_thread is not None:
+            logger.warning("轮询线程已在运行")
+            return
+
+        self._polling_stop_event = threading.Event()
+        self._polling_thread = threading.Thread(
+            target=self._poll_device_changes,
+            name="DevicePollingThread",
+            daemon=True
+        )
+        self._polling_thread.start()
+        logger.info("✅ 设备变更轮询线程已启动")
+
+    def _stop_polling_thread(self):
+        """停止设备变更轮询线程"""
+        if self._polling_thread is None:
+            return
+
+        logger.info("正在停止设备轮询线程...")
+
+        # 设置停止信号
+        self._polling_stop_event.set()
+
+        # 等待线程结束（最多5秒）
+        self._polling_thread.join(timeout=5)
+
+        if self._polling_thread.is_alive():
+            logger.warning("⚠️  轮询线程未能在5秒内停止，可能仍在运行")
+        else:
+            logger.info("✅ 设备轮询线程已停止")
+
+        self._polling_thread = None
+        self._polling_stop_event = None
+
+    def _validate_device_config(self, device_config: dict) -> tuple[bool, str]:
+        """验证单个设备配置
+
+        Args:
+            device_config: 设备配置字典
+
+        Returns:
+            (是否有效, 错误信息)
+        """
+        try:
+            # 1. 验证 device_name
+            device_name = device_config.get("device_name")
+            if not device_name:
+                return False, "缺少 device_name 字段"
+
+            # 使用 DeviceManager 的验证逻辑
+            from src.device_manager import DeviceManager
+            DeviceManager.validate_device_name(device_name)
+
+            # 2. 验证 log_path
+            log_path = device_config.get("log_path")
+            if not log_path:
+                return False, "缺少 log_path 字段"
+
+            DeviceManager.validate_log_path(log_path)
+
+            # 3. 验证 encoding
+            encoding = device_config.get("encoding")
+            if not encoding:
+                return False, "缺少 encoding 字段"
+
+            # 4. 验证 polling_interval
+            polling_interval = device_config.get("polling_interval")
+            if polling_interval is None:
+                return False, "缺少 polling_interval 字段"
+
+            if not isinstance(polling_interval, int) or polling_interval <= 0:
+                return False, f"polling_interval 必须为正整数，当前值: {polling_interval}"
+
+            return True, ""
+
+        except ValueError as e:
+            return False, str(e)
+        except Exception as e:
+            return False, f"验证异常: {e}"
+
     def start(self):
         """启动服务"""
         logger.info("=" * 50)
@@ -310,14 +498,55 @@ class AlertService:
         self.multi_device_watcher = MultiDeviceWatcher(on_alarm=self._on_alarm)
         logger.info("MultiDeviceWatcher 已创建")
 
-        # 从数据库加载启用的设备列表
-        devices = self.multi_device_watcher.load_devices_from_db()
+        # 从数据库加载启用的设备列表（添加错误处理）
+        devices = []
+        try:
+            devices = self.multi_device_watcher.load_devices_from_db()
+        except Exception as e:
+            logger.error(f"从数据库加载设备配置失败: {e}")
+            logger.warning("服务将启动但不会监控任何设备（数据库连接失败）")
 
         if not devices:
-            logger.warning("数据库中没有启用的设备，服务将启动但不会监控任何日志")
+            logger.warning("没有有效的设备配置，服务将启动但不会监控任何日志")
         else:
-            # 启动所有设备监控
-            self.multi_device_watcher.start_all(devices)
+            # 配置验证摘要
+            total_devices = len(devices)
+            valid_devices = []
+            invalid_devices = []
+
+            logger.info(f"开始验证 {total_devices} 个设备配置...")
+
+            # 验证每个设备配置
+            for device_config in devices:
+                device_name = device_config.get("device_name", "未知")
+                is_valid, error_msg = self._validate_device_config(device_config)
+
+                if is_valid:
+                    valid_devices.append(device_config)
+                else:
+                    invalid_devices.append((device_name, error_msg))
+                    logger.warning(f"设备配置无效 [{device_name}]: {error_msg}")
+
+            # 记录验证摘要
+            logger.info(f"配置验证摘要: 总计 {total_devices} 个, 有效 {len(valid_devices)} 个, 无效 {len(invalid_devices)} 个")
+
+            if invalid_devices:
+                logger.warning("以下设备配置将被跳过:")
+                for device_name, error in invalid_devices:
+                    logger.warning(f"  - {device_name}: {error}")
+
+            # 启动有效的设备监控
+            if valid_devices:
+                self.multi_device_watcher.start_all(valid_devices)
+
+                # 验证至少启动了一个设备
+                active_count = len(self.multi_device_watcher.get_active_devices())
+                if active_count == 0:
+                    logger.error("❌ 所有设备启动失败，服务将继续运行但不会监控任何设备")
+                else:
+                    logger.info(f"✅ 成功启动 {active_count} 个设备监控（共 {len(valid_devices)} 个有效配置）")
+            else:
+                logger.warning("没有有效的设备配置，服务将启动但不会监控任何日志")
 
         # 配置每日汇总定时任务
         daily_config = self.config.get("daily_report", {})
@@ -337,25 +566,124 @@ class AlertService:
         # 启动Web服务（如果启用）
         if self.enable_web:
             self._start_web_service()
+            # 设置 AlertService 全局实例（供 API 端点使用）
+            from src.web.app import set_alert_service_instance
+            set_alert_service_instance(self)
+
+        # 启动设备变更轮询线程
+        self._start_polling_thread()
 
         self._running = True
         logger.info("服务启动完成 ✅")
+
+    def start_device_by_name(self, device_name: str):
+        """通过设备名称启动设备监控
+
+        Args:
+            device_name: 设备名称
+
+        Raises:
+            ValueError: 设备不存在或已在监控中
+            Exception: 启动失败
+        """
+        from src.db.device_config import DeviceConfig
+
+        if not self.multi_device_watcher:
+            raise RuntimeError("MultiDeviceWatcher 未初始化")
+
+        # 1. 检查设备是否存在
+        device_config = DeviceConfig.get_by_name(device_name)
+        if not device_config:
+            raise ValueError(f"设备不存在: {device_name}")
+
+        # 2. 检查设备是否已在监控
+        active_devices = self.multi_device_watcher.get_active_devices()
+        if device_name in active_devices:
+            raise ValueError(f"设备已在监控中: {device_name}")
+
+        # 3. 启动设备监控
+        try:
+            self.multi_device_watcher.start_device(device_config)
+            logger.info(f"手动启动设备监控成功: {device_name}")
+        except Exception as e:
+            logger.error(f"手动启动设备监控失败 {device_name}: {e}")
+            raise
+
+    def stop_device_by_name(self, device_name: str):
+        """通过设备名称停止设备监控
+
+        Args:
+            device_name: 设备名称
+
+        Raises:
+            ValueError: 设备未在监控中
+            Exception: 停止失败
+        """
+        if not self.multi_device_watcher:
+            raise RuntimeError("MultiDeviceWatcher 未初始化")
+
+        # 1. 检查设备是否在监控中
+        active_devices = self.multi_device_watcher.get_active_devices()
+        if device_name not in active_devices:
+            raise ValueError(f"设备未在监控中: {device_name}")
+
+        # 2. 停止设备监控
+        try:
+            self.multi_device_watcher.stop_device(device_name)
+            logger.info(f"手动停止设备监控成功: {device_name}")
+        except Exception as e:
+            logger.error(f"手动停止设备监控失败 {device_name}: {e}")
+            raise
 
     def stop(self):
         """停止服务"""
         logger.info("正在停止服务...")
         self._running = False
 
+        # 停止设备变更轮询线程（已包含超时保护）
+        self._stop_polling_thread()
+
         # 停止Web服务
         if self.enable_web:
             self._stop_web_service()
 
-        # 停止所有设备监控
+        # 停止所有设备监控（添加超时保护）
         if self.multi_device_watcher:
-            self.multi_device_watcher.stop_all()
+            import time
+            start_time = time.time()
+            timeout = 5  # 5秒超时
+
+            try:
+                self.multi_device_watcher.stop_all()
+
+                # 验证是否所有设备都已停止
+                active_devices = self.multi_device_watcher.get_active_devices()
+                if active_devices:
+                    elapsed = time.time() - start_time
+                    if elapsed < timeout:
+                        logger.warning(f"⚠️  还有 {len(active_devices)} 个设备未停止，等待最多 {timeout - elapsed:.1f} 秒...")
+                        # 等待剩余时间
+                        time.sleep(timeout - elapsed)
+                        active_devices = self.multi_device_watcher.get_active_devices()
+
+                    if active_devices:
+                        logger.warning(f"⚠️  超时后仍有 {len(active_devices)} 个设备未停止，强制继续")
+                    else:
+                        logger.info("✅ 所有设备监控已正常停止")
+                else:
+                    logger.info("✅ 所有设备监控已正常停止")
+
+            except Exception as e:
+                logger.error(f"停止设备监控时出错: {e}")
+                # 继续执行其他清理操作
 
         if hasattr(self, "scheduler") and self.scheduler.running:
-            self.scheduler.shutdown()
+            try:
+                self.scheduler.shutdown(wait=False)
+                logger.info("定时任务调度器已停止")
+            except Exception as e:
+                logger.error(f"停止调度器时出错: {e}")
+
         logger.info("服务已停止")
 
 
