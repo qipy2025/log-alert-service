@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, Text, DateTime, Index
+from sqlalchemy import Column, BigInteger, String, Text, DateTime, Boolean, Index
 from sqlalchemy.sql import func
 from src.db.mysql import Base
 
@@ -13,11 +13,13 @@ class AlarmRecord(Base):
     ai_analysis = Column(Text)
     log_timestamp = Column(DateTime, nullable=False, index=True)
     created_at = Column(DateTime, default=func.now(), nullable=False)
+    notified = Column(Boolean, default=False, nullable=False, index=True)
 
     # 复合索引
     __table_args__ = (
         Index('idx_device_time', 'device_name', 'log_timestamp'),
         Index('idx_created', 'created_at'),
+        Index('idx_notified', 'notified'),
     )
 
     def to_dict(self):
@@ -29,5 +31,6 @@ class AlarmRecord(Base):
             'alarm_content': self.alarm_content,
             'ai_analysis': self.ai_analysis,
             'log_timestamp': self.log_timestamp.isoformat() if self.log_timestamp else None,
-            'created_at': self.created_at.isoformat() if self.created_at else None
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'notified': self.notified
         }
