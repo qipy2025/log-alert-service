@@ -119,7 +119,7 @@ class AlertService:
 
             # 检查告警级别是否在允许列表中
             # 如果 allowed_levels 为空，则所有级别都被过滤
-            if config.allowed_levels and event.level.value not in config.allowed_levels:
+            if not config.allowed_levels or event.level.value not in config.allowed_levels:
                 return False
 
             return True
