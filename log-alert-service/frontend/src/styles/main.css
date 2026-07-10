@@ -1,0 +1,61 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background-color: #f5f5f5;
+}
+
+#app {
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* 设备卡片样式 */
+.device-card {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.device-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.status-indicator {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 8px;
+}
+
+.status-running {
+  background-color: #67c23a;
+  box-shadow: 0 0 8px rgba(103, 194, 58, 0.6);
+}
+
+.status-paused {
+  background-color: #e6a23c;
+  box-shadow: 0 0 8px rgba(230, 162, 60, 0.6);
+}
+
+/* 告警列表样式 */
+.alarm-list {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.alarm-content {
+  max-width: 100%;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
