@@ -1,0 +1,32 @@
+# 测试环境配置
+log_source:
+  type: local
+  path: "tests/fixtures/logs/"
+  polling_interval: 1
+  encoding: utf-8-sig
+  max_context_lines: 10
+  functional_log_window: 3
+
+feishu:
+  app_id: "${FEISHU_TEST_APP_ID}"
+  app_secret: "${FEISHU_TEST_APP_SECRET}"
+  chats:
+    - chat_id: "${FEISHU_TEST_CHAT_ID}"
+      type: test
+      name: "测试群"
+
+ai_analysis:
+  enabled: true
+  api_key: "${CLAUDE_API_KEY}"
+  api_base_url: "${CLAUDE_API_BASE}"
+  model: "deepseek-v4-flash-anthropic"
+  max_tokens: 1024
+  temperature: 0.3
+
+dedup:
+  alarm_window: 10
+  max_repeat_count: 3
+
+daily_report:
+  enabled: true
+  schedule_time: "00:00"

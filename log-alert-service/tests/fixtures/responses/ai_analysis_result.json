@@ -1,0 +1,7 @@
+{
+  "root_cause": "胶量不足导致点胶阀缺胶报警",
+  "severity": "critical",
+  "suggestion": "1. 检查胶桶余量\n2. 更换胶桶\n3. 重新启动点胶流程",
+  "related_module": "点胶阀",
+  "probable_time_to_resolve": "10分钟"
+}

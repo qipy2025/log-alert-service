@@ -1,0 +1,49 @@
+# config.yaml - 告警推送服务配置
+# 敏感信息（API Key / Secret）通过 .env 文件设置
+
+# 日志源
+log_source:
+  type: windows_share
+  path: "D:\\code\\LOG\\CD-ADS-1\\点胶设备\\上位机日志\\2026-06-08\\"  # 完整路径，不再自动添加日期
+  use_direct_path: true  # 直接使用配置的路径，不自动添加日期子目录
+  polling_interval: 2
+  encoding: utf-8
+  max_context_lines: 20
+  functional_log_window: 5
+
+# 飞书配置（App ID 和 Secret 从 .env 读取）
+feishu:
+  app_id: "${FEISHU_APP_ID}"
+  app_secret: "${FEISHU_APP_SECRET}"
+  chats:
+    - chat_id: oc_aa8f612241f26528a681db30bda7402e
+      type: debug
+      name: "日志分析测试"
+    - chat_id: oc_e0dadc6e5ab606ff14ceb6f1150ee418
+      type: production
+      name: "设备日志AI分析预警"
+
+# AI 分析（API Key 从 .env 读取）
+ai_analysis:
+  enabled: true
+  api_key: "${CLAUDE_API_KEY}"
+  api_base_url: "http://model-api.desaysv.com"
+  model: "deepseek-v4-flash-anthropic"
+  max_tokens: 2048
+  temperature: 0.3
+
+# 去重
+dedup:
+  alarm_window: 300
+  max_repeat_count: 99
+
+# 每日汇总
+daily_report:
+  enabled: true
+  schedule_time: "22:00"
+
+# 监控设备
+devices:
+  - name: "点胶设备"
+    log_path: "点胶设备\\上位机日志\\"
+    enabled: true
