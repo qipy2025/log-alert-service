@@ -14,6 +14,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from src.config_manager import ConfigManager
 from src.file_watcher import LogWatcher
+from src.multi_device_watcher import MultiDeviceWatcher
+from src.device_monitor_info import DeviceMonitorInfo
 from src.alarm_dedup import AlarmDedup
 from src.context_collector import collect_context
 from src.ai_analyzer import AIAnalyzer
@@ -85,8 +87,8 @@ class AlertService:
         # 定时任务
         self.scheduler = BackgroundScheduler()
 
-        # 当前监控的日期目录
-        self._current_log_dir: str = ""
+        # 多设备监控器
+        self.multi_device_watcher = None
 
     def _init_notification_config(self):
         """初始化通知配置（确保默认配置存在）"""
@@ -97,6 +99,42 @@ class AlertService:
                 logger.info("已创建默认通知配置：禁用状态")
         except Exception as e:
             logger.warning(f"初始化通知配置失败（不影响服务启动）: {e}")
+
+    def _get_device_log_dir(self, device_name: str) -> str:
+        """获取设备的日志目录
+
+        Args:
+            device_name: 设备名称
+
+        Returns:
+            日志目录路径，如果获取失败返回空字符串
+        """
+        if not self.multi_device_watcher:
+            logger.warning(f"MultiDeviceWatcher 未初始化，无法获取设备 {device_name} 的日志目录")
+            return ""
+
+        try:
+            device_status = self.multi_device_watcher.get_device_status(device_name)
+            if not device_status:
+                logger.warning(f"未找到设备 {device_name} 的状态信息")
+                return ""
+
+            log_path = device_status.get("log_path", "")
+            if not log_path:
+                logger.warning(f"设备 {device_name} 没有配置日志路径")
+                return ""
+
+            # 添加日期子目录（与 MultiDeviceWatcher._build_log_path 一致）
+            from datetime import datetime
+            from pathlib import Path
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            full_path = str(Path(log_path) / today_str)
+
+            return full_path
+
+        except Exception as e:
+            logger.error(f"获取设备 {device_name} 日志目录失败: {e}")
+            return ""
 
     def _should_send_notification(self, event) -> bool:
         """检查配置是否允许发送此告警
@@ -140,13 +178,16 @@ class AlertService:
             event.daily_count = self.dedup.get_repeat_count(event)
 
             # 2. 收集上下文
-            if self._current_log_dir:
+            device_log_dir = self._get_device_log_dir(event.module_name)
+            if device_log_dir:
                 collect_context(
                     event,
-                    self._current_log_dir,
+                    device_log_dir,
                     self.config.get("log_source.max_context_lines", 20),
                     self.config.get("log_source.functional_log_window", 5),
                 )
+            else:
+                logger.warning(f"无法获取设备 {event.module_name} 的日志目录，跳过上下文收集")
 
             # 3. AI 分析
             analysis = self.ai_analyzer.analyze(event)
@@ -265,35 +306,18 @@ class AlertService:
         logger.info("设备日志 AI 告警推送服务启动中...")
         logger.info("=" * 50)
 
-        # 获取日志路径
-        log_source = self.config.get("log_source", {})
-        base_path = log_source.get("path", "")
+        # 创建多设备监控器
+        self.multi_device_watcher = MultiDeviceWatcher(on_alarm=self._on_alarm)
+        logger.info("MultiDeviceWatcher 已创建")
 
-        # 检查是否直接使用完整路径（不自动添加日期）
-        use_direct_path = log_source.get("use_direct_path", False)
+        # 从数据库加载启用的设备列表
+        devices = self.multi_device_watcher.load_devices_from_db()
 
-        if use_direct_path:
-            # 直接使用配置的路径，不添加日期子目录
-            target_dir = base_path
+        if not devices:
+            logger.warning("数据库中没有启用的设备，服务将启动但不会监控任何日志")
         else:
-            # 确定今天的日志目录
-            from datetime import datetime
-            today_str = datetime.now().strftime("%Y-%m-%d")
-            target_dir = str(Path(base_path) / today_str)
-
-        self._current_log_dir = target_dir
-
-        logger.info(f"监控日志目录: {target_dir}")
-
-        # 启动文件监控
-        self.watcher = LogWatcher(
-            log_dir=target_dir,
-            on_alarm=self._on_alarm,
-            polling_interval=log_source.get("polling_interval", 2),
-            encoding=log_source.get("encoding", "utf-8-sig"),
-        )
-        self.watcher.start()
-        logger.info("文件监控已启动")
+            # 启动所有设备监控
+            self.multi_device_watcher.start_all(devices)
 
         # 配置每日汇总定时任务
         daily_config = self.config.get("daily_report", {})
@@ -326,8 +350,10 @@ class AlertService:
         if self.enable_web:
             self._stop_web_service()
 
-        if hasattr(self, "watcher"):
-            self.watcher.stop()
+        # 停止所有设备监控
+        if self.multi_device_watcher:
+            self.multi_device_watcher.stop_all()
+
         if hasattr(self, "scheduler") and self.scheduler.running:
             self.scheduler.shutdown()
         logger.info("服务已停止")
