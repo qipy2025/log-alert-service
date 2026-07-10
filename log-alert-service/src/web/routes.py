@@ -9,6 +9,10 @@ from src.models.device import DeviceStatusHistory, OperationLog
 from datetime import datetime, timedelta
 import logging
 
+# 通知配置相关导入
+from src.db.notification_config_db import get_notification_config, update_notification_config
+from src.web.socketio import broadcast_config_update
+
 logger = logging.getLogger(__name__)
 
 api_bp = Blueprint('api', __name__)
@@ -238,3 +242,77 @@ def push_device_status_change(device_name, old_status, new_status, changed_by):
         broadcast_device_status_change(device_name, old_status, new_status, changed_by)
     except Exception as e:
         logger.error(f"WebSocket推送失败: {e}")
+
+
+@api_bp.route('/notification-config', methods=['GET'])
+def get_notification_config_api():
+    """获取通知配置
+
+    返回当前的通知配置，包括总开关状态和允许的告警级别
+    """
+    try:
+        config = get_notification_config()
+        if not config:
+            # 返回默认配置
+            return jsonify({
+                'enabled': False,
+                'allowed_levels': []
+            })
+        return jsonify({
+            'enabled': config.enabled,
+            'allowed_levels': config.allowed_levels
+        })
+    except Exception as e:
+        logger.error(f"获取通知配置失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/notification-config', methods=['PUT'])
+def update_notification_config_api():
+    """更新通知配置
+
+    Request Body:
+        enabled: boolean - 是否启用通知
+        allowed_levels: array of string - 允许的告警级别列表
+
+    Returns:
+        更新后的配置信息
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
+
+        enabled = data.get('enabled', False)
+        allowed_levels = data.get('allowed_levels', [])
+
+        # 验证 allowed_levels 必须是列表
+        if not isinstance(allowed_levels, list):
+            return jsonify({'error': 'allowed_levels must be an array'}), 400
+
+        # 验证告警级别的有效性
+        valid_levels = {'CRITICAL', 'WARNING', 'INFO'}
+        for level in allowed_levels:
+            if level not in valid_levels:
+                return jsonify({'error': f'Invalid alarm level: {level}. Valid levels are: CRITICAL, WARNING, INFO'}), 400
+
+        # 更新配置
+        config = update_notification_config(enabled, allowed_levels)
+
+        # 广播配置更新到所有 WebSocket 客户端
+        broadcast_config_update({
+            'enabled': config.enabled,
+            'allowed_levels': config.allowed_levels
+        })
+
+        return jsonify({
+            'success': True,
+            'config': {
+                'enabled': config.enabled,
+                'allowed_levels': config.allowed_levels
+            }
+        })
+    except Exception as e:
+        logger.error(f"更新通知配置失败: {e}")
+        return jsonify({'error': str(e)}), 500
