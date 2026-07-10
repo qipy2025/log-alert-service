@@ -167,3 +167,69 @@ class DeviceManager:
         if result:
             logger.info(f"设备 {device_name} 自动发送设置为: {auto_notify}")
         return result
+
+    def update_device(self, device_name: str, config: dict) -> dict:
+        """更新设备配置
+
+        Args:
+            device_name: 当前设备名称
+            config: {
+                "device_name": str (optional),  # 新的设备名称
+                "log_path": str (optional),
+                "enabled": bool (optional)
+            }
+
+        Returns:
+            更新后的设备配置
+
+        Raises:
+            ValueError: 设备不存在或输入验证失败
+        """
+        # 检查设备是否存在
+        if not DeviceConfig.exists(device_name):
+            raise ValueError(f"设备不存在: {device_name}")
+
+        # 获取可选参数
+        new_device_name = config.get("device_name")
+        new_log_path = config.get("log_path")
+        new_enabled = config.get("enabled")
+
+        # 如果要修改设备名称，需要验证新名称
+        if new_device_name is not None:
+            self.validate_device_name(new_device_name)
+            # 检查新名称是否已被其他设备使用
+            if new_device_name != device_name and DeviceConfig.exists(new_device_name):
+                raise ValueError(f"设备名称已存在: {new_device_name}")
+
+        # 如果要修改日志路径，需要验证
+        if new_log_path is not None:
+            self.validate_log_path(new_log_path)
+
+        # 处理设备名称修改（需要特殊处理）
+        if new_device_name is not None and new_device_name != device_name:
+            # 1. 获取旧配置
+            old_device = DeviceConfig.get_by_name(device_name)
+            # 2. 创建新设备
+            DeviceConfig.create(
+                device_name=new_device_name,
+                log_path=new_log_path or old_device["log_path"],
+                auto_notify=old_device["auto_notify"],
+                polling_interval=old_device["polling_interval"],
+                encoding=old_device["encoding"],
+                enabled=new_enabled if new_enabled is not None else old_device["enabled"]
+            )
+            # 3. 删除旧设备
+            DeviceConfig.delete(device_name)
+            # 4. 返回新设备配置
+            return DeviceConfig.get_by_name(new_device_name)
+        else:
+            # 只更新其他字段
+            result = DeviceConfig.update(
+                device_name=device_name,
+                log_path=new_log_path,
+                enabled=new_enabled
+            )
+            if result:
+                return DeviceConfig.get_by_name(device_name)
+            else:
+                raise ValueError(f"更新设备失败: {device_name}")

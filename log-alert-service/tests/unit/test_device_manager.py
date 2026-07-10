@@ -111,3 +111,88 @@ def test_delete_device_not_found():
 
     with pytest.raises(ValueError, match="设备不存在"):
         manager.delete_device("不存在的设备")
+
+def test_update_device(device_manager):
+    """测试更新设备配置"""
+    # 清理（如果存在）
+    if DeviceConfig.exists("test_update"):
+        DeviceConfig.delete("test_update")
+
+    # 创建测试设备
+    device_manager.add_device({
+        "device_name": "test_update",
+        "log_path": "old\\path\\",
+        "enabled": True
+    })
+
+    # 更新设备
+    updated = device_manager.update_device("test_update", {
+        "log_path": "new\\path\\",
+        "enabled": False
+    })
+
+    assert updated["log_path"] == "new\\path\\"
+    assert updated["enabled"] in (False, 0)
+    assert updated["device_name"] == "test_update"
+
+    # 清理
+    DeviceConfig.delete("test_update")
+
+def test_update_device_not_exists(device_manager):
+    """测试更新不存在的设备"""
+    with pytest.raises(ValueError, match="设备不存在"):
+        device_manager.update_device("nonexistent", {
+            "log_path": "new\path\\"
+        })
+
+def test_update_device_invalid_name(device_manager):
+    """测试更新设备时名称无效"""
+    # 清理
+    if DeviceConfig.exists("test_device"):
+        DeviceConfig.delete("test_device")
+
+    device_manager.add_device({
+        "device_name": "test_device",
+        "log_path": "test\\path\\",
+        "enabled": True
+    })
+
+    with pytest.raises(ValueError, match="设备名称格式无效"):
+        device_manager.update_device("test_device", {
+            "device_name": "无效名称!@#"
+        })
+
+    # 清理
+    DeviceConfig.delete("test_device")
+
+def test_update_device_duplicate_name(device_manager):
+    """测试更新设备时名称重复"""
+    # 清理
+    DeviceConfig.delete("device1")
+    DeviceConfig.delete("device2")
+
+    device_manager.add_device({
+        "device_name": "device1",
+        "log_path": "path1\\",
+        "enabled": True
+    })
+    device_manager.add_device({
+        "device_name": "device2",
+        "log_path": "path2\\",
+        "enabled": True
+    })
+
+    with pytest.raises(ValueError, match="设备名称已存在"):
+        device_manager.update_device("device1", {
+            "device_name": "device2"
+        })
+
+    # 清理
+    DeviceConfig.delete("device1")
+    DeviceConfig.delete("device2")
+
+@pytest.fixture
+def device_manager():
+    """提供 DeviceManager 实例"""
+    manager = DeviceManager()
+    yield manager
