@@ -43,109 +43,158 @@ def get_devices():
 
 @api_bp.route('/devices/<device_name>/start', methods=['POST'])
 def start_device(device_name):
-    """启动设备监控"""
+    """启动设备监控
+
+    实际启动设备的 LogWatcher，而不仅仅是更新状态。
+    """
     data = request.get_json() or {}
     reason = data.get('reason', '手动启动')
 
-    # 获取当前状态
-    status_data = get_device_status(device_name)
-    old_status = status_data.get('status', 'RUNNING')
+    # 获取 AlertService 实例
+    from src.web.app import get_alert_service_instance
+    alert_service = get_alert_service_instance()
 
-    # 更新缓存状态
-    set_device_status(device_name, 'RUNNING', changed_by='user', reason=reason)
+    if not alert_service:
+        return jsonify({'error': 'AlertService 未启动'}), 500
 
-    # 记录到MySQL
-    session = get_db_session()
     try:
-        history = DeviceStatusHistory(
-            device_name=device_name,
-            old_status=old_status,
-            new_status='RUNNING',
-            changed_by='user',
-            reason=reason
-        )
-        session.add(history)
-        session.commit()
+        # 调用 AlertService 启动设备
+        alert_service.start_device_by_name(device_name)
+
+        # 更新缓存状态
+        set_device_status(device_name, 'RUNNING', changed_by='user', reason=reason)
+
+        # 记录到MySQL
+        session = get_db_session()
+        try:
+            history = DeviceStatusHistory(
+                device_name=device_name,
+                old_status='STOPPED',
+                new_status='RUNNING',
+                changed_by='user',
+                reason=reason
+            )
+            session.add(history)
+            session.commit()
+        except Exception as e:
+            logger.error(f"记录设备状态失败: {e}")
+            session.rollback()
+        finally:
+            session.close()
+
+        # 记录操作日志
+        session = get_db_session()
+        try:
+            log = OperationLog(
+                user_id='user',
+                operation='START_DEVICE',
+                target_device=device_name,
+                details={'reason': reason}
+            )
+            session.add(log)
+            session.commit()
+        except Exception as e:
+            logger.error(f"记录操作日志失败: {e}")
+            session.rollback()
+        finally:
+            session.close()
+
+        # 通过WebSocket推送
+        push_device_status_change(device_name, 'STOPPED', 'RUNNING', 'user')
+
+        return jsonify({'success': True, 'message': '设备监控已启动'})
+
+    except ValueError as e:
+        # 业务逻辑错误（设备不存在或已在监控中）
+        error_msg = str(e)
+        if '设备不存在' in error_msg:
+            return jsonify({'error': error_msg}), 404
+        elif '已在监控中' in error_msg:
+            return jsonify({'error': error_msg}), 409
+        else:
+            return jsonify({'error': error_msg}), 400
     except Exception as e:
-        logger.error(f"记录设备状态失败: {e}")
-        session.rollback()
-    finally:
-        session.close()
+        logger.error(f"启动设备监控失败: {e}")
+        return jsonify({'error': str(e)}), 500
 
-    # 记录操作日志
-    session = get_db_session()
-    try:
-        log = OperationLog(
-            user_id='user',
-            operation='START_DEVICE',
-            target_device=device_name,
-            details={'reason': reason}
-        )
-        session.add(log)
-        session.commit()
-    except Exception as e:
-        logger.error(f"记录操作日志失败: {e}")
-        session.rollback()
-    finally:
-        session.close()
 
-    # 通过WebSocket推送
-    push_device_status_change(device_name, old_status, 'RUNNING', 'user')
+@api_bp.route('/devices/<device_name>/stop', methods=['POST'])
+def stop_device(device_name):
+    """停止设备监控
 
-    return jsonify({'success': True, 'message': '设备监控已启动'})
-
-@api_bp.route('/devices/<device_name>/pause', methods=['POST'])
-def pause_device(device_name):
-    """暂停设备监控"""
+    实际停止设备的 LogWatcher，而不仅仅是更新状态。
+    """
     data = request.get_json() or {}
-    reason = data.get('reason', '手动暂停')
+    reason = data.get('reason', '手动停止')
 
-    # 获取当前状态
-    status_data = get_device_status(device_name)
-    old_status = status_data.get('status', 'RUNNING')
+    # 获取 AlertService 实例
+    from src.web.app import get_alert_service_instance
+    alert_service = get_alert_service_instance()
 
-    # 更新缓存状态
-    set_device_status(device_name, 'PAUSED', changed_by='user', reason=reason)
+    if not alert_service:
+        return jsonify({'error': 'AlertService 未启动'}), 500
 
-    # 记录到MySQL
-    session = get_db_session()
     try:
-        history = DeviceStatusHistory(
-            device_name=device_name,
-            old_status=old_status,
-            new_status='PAUSED',
-            changed_by='user',
-            reason=reason
-        )
-        session.add(history)
-        session.commit()
+        # 获取当前状态
+        status_data = get_device_status(device_name)
+        old_status = status_data.get('status', 'RUNNING')
+
+        # 调用 AlertService 停止设备
+        alert_service.stop_device_by_name(device_name)
+
+        # 更新缓存状态
+        set_device_status(device_name, 'STOPPED', changed_by='user', reason=reason)
+
+        # 记录到MySQL
+        session = get_db_session()
+        try:
+            history = DeviceStatusHistory(
+                device_name=device_name,
+                old_status=old_status,
+                new_status='STOPPED',
+                changed_by='user',
+                reason=reason
+            )
+            session.add(history)
+            session.commit()
+        except Exception as e:
+            logger.error(f"记录设备状态失败: {e}")
+            session.rollback()
+        finally:
+            session.close()
+
+        # 记录操作日志
+        session = get_db_session()
+        try:
+            log = OperationLog(
+                user_id='user',
+                operation='STOP_DEVICE',
+                target_device=device_name,
+                details={'reason': reason}
+            )
+            session.add(log)
+            session.commit()
+        except Exception as e:
+            logger.error(f"记录操作日志失败: {e}")
+            session.rollback()
+        finally:
+            session.close()
+
+        # 通过WebSocket推送
+        push_device_status_change(device_name, old_status, 'STOPPED', 'user')
+
+        return jsonify({'success': True, 'message': '设备监控已停止'})
+
+    except ValueError as e:
+        # 业务逻辑错误（设备未在监控中）
+        error_msg = str(e)
+        if '未在监控中' in error_msg:
+            return jsonify({'error': error_msg}), 409
+        else:
+            return jsonify({'error': error_msg}), 400
     except Exception as e:
-        logger.error(f"记录设备状态失败: {e}")
-        session.rollback()
-    finally:
-        session.close()
-
-    # 记录操作日志
-    session = get_db_session()
-    try:
-        log = OperationLog(
-            user_id='user',
-            operation='PAUSE_DEVICE',
-            target_device=device_name,
-            details={'reason': reason}
-        )
-        session.add(log)
-        session.commit()
-    except Exception as e:
-        logger.error(f"记录操作日志失败: {e}")
-        session.rollback()
-    finally:
-        session.close()
-
-    # 通过WebSocket推送
-    push_device_status_change(device_name, old_status, 'PAUSED', 'user')
-
-    return jsonify({'success': True, 'message': '设备监控已暂停'})
+        logger.error(f"停止设备监控失败: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @api_bp.route('/alarms', methods=['GET'])
 def get_alarms():

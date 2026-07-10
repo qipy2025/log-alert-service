@@ -9,6 +9,19 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
+# 全局 AlertService 实例
+_alert_service_instance = None
+
+def set_alert_service_instance(instance):
+    """设置 AlertService 全局实例"""
+    global _alert_service_instance
+    _alert_service_instance = instance
+    logger.info("AlertService 实例已设置到全局")
+
+def get_alert_service_instance():
+    """获取 AlertService 全局实例"""
+    return _alert_service_instance
+
 def create_app(testing=False):
     """创建Flask应用"""
     # 确定静态文件路径

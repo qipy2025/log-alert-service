@@ -37,6 +37,10 @@ dedup:
   alarm_window: 300
   max_repeat_count: 99
 
+# 设备轮询配置
+device_polling:
+  interval: 30  # 设备配置变更检测间隔（秒）
+
 # 每日汇总
 daily_report:
   enabled: true
@@ -46,4 +50,7 @@ daily_report:
 devices:
   - name: "点胶设备"
     log_path: "点胶设备\\上位机日志\\"
+    enabled: true
+  - name: "打螺丝设备"
+    log_path: "D:\\code\\LOG\\CD-ADS-1\\打螺丝设备"
     enabled: true
