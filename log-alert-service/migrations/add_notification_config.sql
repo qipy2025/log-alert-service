@@ -14,4 +14,4 @@ CREATE INDEX idx_enabled ON notification_config(enabled);
 -- 插入默认配置：禁用通知，空级别列表
 -- 使用 IGNORE 确保幂等性，如果已存在则跳过
 INSERT IGNORE INTO notification_config (id, enabled, allowed_levels)
-VALUES (1, FALSE, '[]');
+VALUES (1, FALSE, JSON_ARRAY());

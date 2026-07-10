@@ -108,7 +108,7 @@ def init_default_config() -> bool:
             session.execute(
                 text("""
                     INSERT INTO notification_config (id, enabled, allowed_levels)
-                    VALUES (1, FALSE, '[]')
+                    VALUES (1, FALSE, JSON_ARRAY())
                 """)
             )
             session.commit()
