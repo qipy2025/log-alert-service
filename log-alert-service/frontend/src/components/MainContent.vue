@@ -5,7 +5,6 @@
     <div class="content-area">
       <!-- 设备监控页面 -->
       <div v-show="currentPage === 'monitoring'" class="page-view">
-        <notification-config />
         <div class="devices-section">
           <div class="section-header">
             <h2>设备状态</h2>
@@ -70,7 +69,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import DeviceCard from './DeviceCard.vue'
 import AlarmList from './AlarmList.vue'
 import NotificationConfig from './NotificationConfig.vue'
@@ -88,6 +87,11 @@ const props = defineProps<Props>()
 const { devices, fetchDevices } = useDevices()
 const { connected } = useWebSocket()
 
+// 根据当前页面判断是否需要加载设备
+const shouldLoadDevices = computed(() => {
+  return props.currentPage === 'monitoring'
+})
+
 const loadDevices = async () => {
   await fetchDevices()
 }
@@ -97,14 +101,14 @@ const handleStatusChanged = (device: Device) => {
 }
 
 onMounted(() => {
-  if (props.currentPage === 'monitoring') {
+  if (shouldLoadDevices.value) {
     loadDevices()
   }
 })
 
 // 监听设备状态变更事件
 window.addEventListener('device-status-changed', ((event: CustomEvent) => {
-  if (props.currentPage === 'monitoring') {
+  if (shouldLoadDevices.value) {
     loadDevices()
   }
 }) as EventListener)
@@ -124,7 +128,7 @@ window.addEventListener('device-status-changed', ((event: CustomEvent) => {
 }
 
 .devices-section {
-  margin: 24px 0;
+  margin-bottom: 24px;
 }
 
 .section-header {
@@ -156,11 +160,64 @@ window.addEventListener('device-status-changed', ((event: CustomEvent) => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 20px;
-  margin-bottom: 24px;
 }
 
 .alarms-section {
   margin-top: 24px;
+}
+
+.config-header-page {
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.config-header-page h2 {
+  margin: 0 0 8px 0;
+  font-size: 28px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.config-header-page .description {
+  margin: 0;
+  font-size: 16px;
+  color: #7f8c8d;
+}
+
+.devices-management,
+.history-data {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.devices-management h2,
+.history-data h2 {
+  margin: 0 0 20px 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: #909399;
+}
+
+.empty-state-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  color: #c0c4cc;
+}
+
+.empty-state-text {
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
+.empty-state-hint {
+  font-size: 14px;
+  color: #c0c4cc;
 }
 
 .full-page-config {
