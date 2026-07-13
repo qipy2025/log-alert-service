@@ -4,7 +4,7 @@
 # 日志源
 log_source:
   type: windows_share
-  path: "D:\\code\\LOG\\CD-ADS-1\\点胶设备\\上位机日志\\2026-06-08\\"  # 完整路径，不再自动添加日期
+  path: "c:\\code\\01 log-alert-servies\\log-alert-service\\log-alert-service\\tests\\fixtures\\logs\\"  # 本地测试路径
   use_direct_path: true  # 直接使用配置的路径，不自动添加日期子目录
   polling_interval: 2
   encoding: utf-8
@@ -52,5 +52,5 @@ devices:
     log_path: "点胶设备\\上位机日志\\"
     enabled: true
   - name: "打螺丝设备"
-    log_path: "D:\\code\\LOG\\CD-ADS-1\\打螺丝设备"
+    log_path: "c:\\code\\01 log-alert-servies\\log-alert-service\\log-alert-service\\tests\\fixtures\\logs\\打螺丝设备"
     enabled: true
