@@ -13,8 +13,8 @@ log_source:
 
 # 飞书配置（App ID 和 Secret 从 .env 读取）
 feishu:
-  app_id: "cli_aadec33ae0791bd0"
-  app_secret: "REMOVED"
+  app_id: "${FEISHU_APP_ID}"
+  app_secret: "${FEISHU_APP_SECRET}"
   chats:
     - chat_id: oc_aa8f612241f26528a681db30bda7402e
       type: debug
