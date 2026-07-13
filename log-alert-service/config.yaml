@@ -13,8 +13,8 @@ log_source:
 
 # 飞书配置（App ID 和 Secret 从 .env 读取）
 feishu:
-  app_id: "${FEISHU_APP_ID}"
-  app_secret: "${FEISHU_APP_SECRET}"
+  app_id: "cli_aadec33ae0791bd0"
+  app_secret: "REMOVED"
   chats:
     - chat_id: oc_aa8f612241f26528a681db30bda7402e
       type: debug
@@ -48,9 +48,15 @@ daily_report:
 
 # 监控设备
 devices:
-  - name: "点胶设备"
-    log_path: "点胶设备\\上位机日志\\"
-    enabled: true
   - name: "打螺丝设备"
-    log_path: "c:\\code\\01 log-alert-servies\\log-alert-service\\log-alert-service\\tests\\fixtures\\logs\\打螺丝设备"
+    log_path: "C:\\code\\01 log-alert-servies\\CD-ADS-1\\打螺丝设备\\上位机日志"
+    enabled: true
+  - name: "排线检测设备"
+    log_path: "C:\\code\\01 log-alert-servies\\CD-ADS-1\\排线检测设备\\上位机日志"
+    enabled: true
+  - name: "点胶设备"
+    log_path: "C:\\code\\01 log-alert-servies\\CD-ADS-1\\点胶设备\\上位机日志"
+    enabled: true
+  - name: "贴屏设备"
+    log_path: "C:\\code\\01 log-alert-servies\\CD-ADS-1\\贴屏设备\\上位机日志"
     enabled: true
