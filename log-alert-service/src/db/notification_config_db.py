@@ -3,7 +3,7 @@ import json
 from sqlalchemy import text
 from typing import Optional, List
 
-from src.db.mysql import get_db_session
+from src.db.manager import get_session
 from src.models.notification_config import NotificationConfig
 
 # 常量定义
@@ -27,7 +27,7 @@ def get_notification_config() -> Optional[NotificationConfig]:
     Raises:
         RuntimeError: 数据库操作失败时抛出
     """
-    session = get_db_session()
+    session = get_session()
     try:
         # 使用原生 SQL 查询
         result = session.execute(
@@ -58,19 +58,23 @@ def update_notification_config(enabled: bool, allowed_levels: List[str]) -> Noti
     Raises:
         RuntimeError: 数据库操作失败时抛出
     """
-    session = get_db_session()
+    session = get_session()
     try:
-        # 使用 UPSERT 确保始终有一条记录（id=1）
-        session.execute(
-            text("""
-                INSERT INTO notification_config (id, enabled, allowed_levels)
-                VALUES (1, :enabled, :levels)
-                ON DUPLICATE KEY UPDATE
-                    enabled = :enabled,
-                    allowed_levels = :levels
-            """),
-            {"enabled": enabled, "levels": json.dumps(allowed_levels)}
-        )
+        # 先判断记录是否存在，再 UPDATE 或 INSERT（SQLite/MySQL 兼容）
+        levels_json = json.dumps(allowed_levels)
+        existing = session.execute(
+            text("SELECT id FROM notification_config WHERE id = 1")
+        ).fetchone()
+        if existing:
+            session.execute(
+                text("UPDATE notification_config SET enabled = :enabled, allowed_levels = :levels WHERE id = 1"),
+                {"enabled": enabled, "levels": levels_json}
+            )
+        else:
+            session.execute(
+                text("INSERT INTO notification_config (id, enabled, allowed_levels) VALUES (1, :enabled, :levels)"),
+                {"enabled": enabled, "levels": levels_json}
+            )
         session.commit()
 
         # 直接构建返回对象，避免重复查询
@@ -96,7 +100,7 @@ def init_default_config() -> bool:
     Raises:
         RuntimeError: 数据库操作失败时抛出
     """
-    session = get_db_session()
+    session = get_session()
     try:
         # 检查是否已存在配置
         existing = session.execute(
@@ -104,12 +108,9 @@ def init_default_config() -> bool:
         ).fetchone()
 
         if not existing:
-            # 插入默认配置
+            # 插入默认配置（SQLite/MySQL 兼容：enabled=0，allowed_levels='[]'）
             session.execute(
-                text("""
-                    INSERT INTO notification_config (id, enabled, allowed_levels)
-                    VALUES (1, FALSE, JSON_ARRAY())
-                """)
+                text("INSERT INTO notification_config (id, enabled, allowed_levels) VALUES (1, 0, '[]')")
             )
             session.commit()
             return True

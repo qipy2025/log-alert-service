@@ -9,13 +9,15 @@ logger = logging.getLogger(__name__)
 
 def store_alarm_to_db(event: AlarmEvent, analysis=None) -> None:
     """存储告警到数据库"""
-    from src.db.mysql import get_db_session
+    from src.db.manager import get_db_interface
     from src.db.cache import increment_alarm_count
 
+    db = get_db_interface()
+    get_db_session = db['get_db_session']
     session = get_db_session()
     try:
-        # 映射AlarmEvent到AlarmRecord
-        device_name = event.module_name  # 使用module_name作为设备名
+        # 映射AlarmEvent到AlarmRecord（优先用设备配置名）
+        device_name = getattr(event, 'device_name', None) or event.module_name
         alarm_level = str(event.level.value).upper()  # 转换为字符串
 
         # 构建AI分析JSON
@@ -109,3 +111,56 @@ class AlarmDedup:
         stale = [k for k, v in self._cache.items() if now - v[0] > max_age]
         for k in stale:
             del self._cache[k]
+
+
+def update_alarm_notified_status(event: AlarmEvent) -> bool:
+    """更新告警记录的通知状态
+
+    Args:
+        event: 告警事件对象
+
+    Returns:
+        是否更新成功
+    """
+    from src.db.manager import get_db_interface
+    from datetime import datetime
+    from sqlalchemy import text
+
+    db = get_db_interface()
+    get_db_session = db['get_db_session']
+    session = get_db_session()
+    try:
+        # 查找最近的未通知匹配告警
+        # 使用告警内容、设备名和时间范围来匹配
+        time_threshold = datetime.fromtimestamp(event.timestamp.timestamp() - 300)  # 5分钟窗口
+
+        result = session.execute(
+            text("""
+                UPDATE alarm_records
+                SET notified = 1
+                WHERE device_name = :device_name
+                  AND alarm_content = :alarm_content
+                  AND log_timestamp >= :time_threshold
+                  AND notified = 0
+            """),
+            {
+                "device_name": getattr(event, 'device_name', None) or event.module_name,
+                "alarm_content": event.alarm_text,
+                "time_threshold": time_threshold
+            }
+        )
+
+        session.commit()
+        updated = result.rowcount > 0
+
+        if updated:
+            logger.info(f"告警通知状态已更新: {event.module_name} - {event.alarm_text[:30]}...")
+
+        return updated
+
+    except Exception as e:
+        logger.error(f"更新告警通知状态失败: {e}")
+        session.rollback()
+        return False
+    finally:
+        session.close()

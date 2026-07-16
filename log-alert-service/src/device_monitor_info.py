@@ -107,11 +107,20 @@ class DeviceMonitorInfo:
             包含设备状态信息的字典
         """
         with self._lock:
+            cfg = self.device_config
             return {
-                "device_name": self.device_config.get("device_name"),
+                "device_name": cfg.get("device_name"),
                 "is_running": self.is_running,
                 "alarm_count": self.alarm_count,
                 "last_heartbeat": self.last_heartbeat.isoformat() if self.last_heartbeat else None,
-                "log_path": self.device_config.get("log_path"),
-                "enabled": self.device_config.get("enabled", True)
+                "log_path": cfg.get("log_path"),
+                "enabled": cfg.get("enabled", True),
+                # 暴露关键配置字段，供配置变更检测比较（避免误判重启）
+                "config": {
+                    "log_path": cfg.get("log_path"),
+                    "polling_interval": cfg.get("polling_interval"),
+                    "encoding": cfg.get("encoding"),
+                    "log_name_mode": cfg.get("log_name_mode"),
+                    "monitor_days": cfg.get("monitor_days"),
+                }
             }

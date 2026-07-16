@@ -61,10 +61,15 @@ class FeishuNotifier:
             json=payload,
             timeout=self.timeout,
         )
-        resp.raise_for_status()
+        if resp.status_code != 200:
+            import logging
+            logging.getLogger(__name__).error(
+                f"飞书发送HTTP {resp.status_code}: {resp.text[:400]}"
+            )
+            return False
         result = resp.json()
         if result.get("code") != 0:
-            print(f"[FeishuNotifier] 发送失败: {result}")
+            print(f"[FeishuNotifier] 发送失败(code={result.get('code')}): {result}")
             return False
         return True
 
@@ -89,7 +94,8 @@ class FeishuNotifier:
             AlarmLevel.INFO: "ℹ️",
         }
 
-        header_title = f"{level_icons[event.level]} 告警通知 - 点胶设备"
+        device_name = getattr(event, 'device_name', None) or '未知设备'
+        header_title = f"{level_icons[event.level]} 告警通知 - {device_name}"
         color = level_colors[event.level]
 
         elements = [
@@ -136,7 +142,7 @@ class FeishuNotifier:
         elements.append({
             "tag": "note",
             "elements": [
-                {"tag": "plain_text", "content": "点胶设备 · 日志AI分析预警系统 v0.1"}
+                {"tag": "plain_text", "content": f"{device_name} · 日志AI分析预警系统 v0.1"}
             ],
         })
 

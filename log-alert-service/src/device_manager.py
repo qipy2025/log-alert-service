@@ -18,6 +18,9 @@ class DeviceManager:
     # Linux路径正则
     LINUX_PATH_PATTERN = re.compile(r'^/[^<>:"|?*]*')
 
+    # UNC 网络共享路径正则（\\host\share[\sub...]）
+    UNC_PATH_PATTERN = re.compile(r'^\\\\[^\\]+\\[^\\]+')
+
     @staticmethod
     def validate_device_name(device_name: str) -> bool:
         """验证设备名称"""
@@ -35,12 +38,13 @@ class DeviceManager:
         if not log_path:
             raise ValueError("日志路径不能为空")
 
-        # 检查是否为有效的Windows或Linux路径
+        # 检查是否为有效的Windows、Linux或UNC网络路径
         is_windows = DeviceManager.WINDOWS_PATH_PATTERN.match(log_path)
         is_linux = DeviceManager.LINUX_PATH_PATTERN.match(log_path)
+        is_unc = DeviceManager.UNC_PATH_PATTERN.match(log_path)
 
         # 也支持相对路径（如：设备名\\日志\\）
-        if not (is_windows or is_linux):
+        if not (is_windows or is_linux or is_unc):
             # 检查是否包含非法字符
             invalid_chars = ['<', '>', ':', '"', '|', '?', '*']
             if any(char in log_path for char in invalid_chars):
@@ -81,6 +85,15 @@ class DeviceManager:
         auto_notify = config.get("auto_notify", False)
         polling_interval = config.get("polling_interval", 2)
         encoding = config.get("encoding", "utf-8-sig")
+        log_name_mode = config.get("log_name_mode", "date_subdir")
+        smb_username = config.get("smb_username")
+        monitor_days = config.get("monitor_days", 1)
+
+        # 密码 Base64 编码后入库
+        smb_password = None
+        if config.get("smb_password"):
+            from src.network_share import encode_password
+            smb_password = encode_password(config.get("smb_password"))
 
         # 创建设备配置
         try:
@@ -89,7 +102,11 @@ class DeviceManager:
                 log_path=log_path,
                 auto_notify=auto_notify,
                 polling_interval=polling_interval,
-                encoding=encoding
+                encoding=encoding,
+                log_name_mode=log_name_mode,
+                smb_username=smb_username,
+                smb_password=smb_password,
+                monitor_days=monitor_days
             )
             logger.info(f"设备已添加: {device_name}")
             return device
@@ -193,6 +210,15 @@ class DeviceManager:
         new_device_name = config.get("device_name")
         new_log_path = config.get("log_path")
         new_enabled = config.get("enabled")
+        new_log_name_mode = config.get("log_name_mode")
+        new_smb_username = config.get("smb_username")
+        new_monitor_days = config.get("monitor_days")
+
+        # 密码：config 提供明文则编码；否则保持 None（由后续逻辑决定是否继承旧值）
+        new_smb_password_encoded = None
+        if config.get("smb_password") is not None:
+            from src.network_share import encode_password
+            new_smb_password_encoded = encode_password(config.get("smb_password"))
 
         # 如果要修改设备名称，需要验证新名称
         if new_device_name is not None:
@@ -216,7 +242,11 @@ class DeviceManager:
                 auto_notify=old_device["auto_notify"],
                 polling_interval=old_device["polling_interval"],
                 encoding=old_device["encoding"],
-                enabled=new_enabled if new_enabled is not None else old_device["enabled"]
+                enabled=new_enabled if new_enabled is not None else old_device["enabled"],
+                log_name_mode=new_log_name_mode or old_device.get("log_name_mode", "date_subdir"),
+                smb_username=new_smb_username if new_smb_username is not None else old_device.get("smb_username"),
+                smb_password=new_smb_password_encoded if new_smb_password_encoded is not None else old_device.get("smb_password"),
+                monitor_days=new_monitor_days if new_monitor_days is not None else old_device.get("monitor_days", 1)
             )
             # 3. 删除旧设备
             DeviceConfig.delete(device_name)
@@ -227,7 +257,11 @@ class DeviceManager:
             result = DeviceConfig.update(
                 device_name=device_name,
                 log_path=new_log_path,
-                enabled=new_enabled
+                enabled=new_enabled,
+                log_name_mode=new_log_name_mode,
+                smb_username=new_smb_username,
+                smb_password=new_smb_password_encoded,
+                monitor_days=new_monitor_days
             )
             if result:
                 return DeviceConfig.get_by_name(device_name)

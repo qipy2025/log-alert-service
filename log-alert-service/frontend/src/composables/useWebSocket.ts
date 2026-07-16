@@ -8,8 +8,9 @@ export function useWebSocket() {
   const connected = ref(false)
 
   const connect = () => {
-    // 使用Socket.IO客户端
-    socket.value = io('ws://localhost:5000', {
+    // 使用Socket.IO客户端，通过相对路径使用Vite代理
+    socket.value = io('', {
+      path: '/socket.io',
       transports: ['websocket', 'polling']
     })
 

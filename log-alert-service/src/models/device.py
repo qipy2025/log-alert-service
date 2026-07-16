@@ -1,6 +1,6 @@
 from sqlalchemy import Column, BigInteger, String, Text, DateTime, Index, JSON
 from sqlalchemy.sql import func
-from src.db.mysql import Base
+from src.db.base import Base
 
 class DeviceStatusHistory(Base):
     """设备状态变更历史表"""

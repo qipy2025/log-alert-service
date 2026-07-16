@@ -37,6 +37,9 @@ Thumbs.db
 *.tmp
 *.bak
 
+# 数据目录（含 sqlite.db 业务数据、读取位置等，不可提交）
+data/
+
 # 前端相关
 frontend/dist/
 frontend/node_modules/

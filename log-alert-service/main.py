@@ -120,23 +120,45 @@ class AlertService:
             return ""
 
         try:
-            device_status = self.multi_device_watcher.get_device_status(device_name)
-            if not device_status:
-                logger.warning(f"未找到设备 {device_name} 的状态信息")
-                return ""
+            # 优先从数据库获取完整配置（含 log_name_mode）
+            log_path = ""
+            log_name_mode = "date_subdir"
+            try:
+                from src.db.device_config import DeviceConfig
+                device_config = DeviceConfig.get_by_name(device_name)
+                if device_config:
+                    log_path = device_config.get("log_path", "")
+                    log_name_mode = device_config.get("log_name_mode", "date_subdir")
+            except Exception:
+                pass
 
-            log_path = device_status.get("log_path", "")
+            # 回退：从 watcher 状态获取 log_path
+            if not log_path:
+                device_status = self.multi_device_watcher.get_device_status(device_name)
+                if device_status:
+                    log_path = device_status.get("log_path", "")
+
             if not log_path:
                 logger.warning(f"设备 {device_name} 没有配置日志路径")
                 return ""
 
-            # 添加日期子目录（与 MultiDeviceWatcher._build_log_path 一致）
             from datetime import datetime
             from pathlib import Path
-            today_str = datetime.now().strftime("%Y-%m-%d")
-            full_path = str(Path(log_path) / today_str)
 
-            return full_path
+            now = datetime.now()
+            # date_filename / root_multi_subdir 模式：返回根目录
+            if log_name_mode in ("date_filename", "root_multi_subdir"):
+                return log_path
+
+            # month_day_subdir 模式：<base>/<YYYY-MM>/<YYYY-MM-DD>
+            if log_name_mode == "month_day_subdir":
+                month_str = now.strftime("%Y-%m")
+                day_str = now.strftime("%Y-%m-%d")
+                return str(Path(log_path) / month_str / day_str)
+
+            # date_subdir 模式：<base>/<YYYY-MM-DD>
+            today_str = now.strftime("%Y-%m-%d")
+            return str(Path(log_path) / today_str)
 
         except Exception as e:
             logger.error(f"获取设备 {device_name} 日志目录失败: {e}")
@@ -184,7 +206,7 @@ class AlertService:
             event.daily_count = self.dedup.get_repeat_count(event)
 
             # 2. 收集上下文
-            device_log_dir = self._get_device_log_dir(event.module_name)
+            device_log_dir = self._get_device_log_dir(getattr(event, 'device_name', None) or event.module_name)
             if device_log_dir:
                 collect_context(
                     event,
@@ -204,7 +226,7 @@ class AlertService:
             # 5. 存储告警到数据库
             try:
                 from src.alarm_dedup import store_alarm_to_db
-                store_alarm_to_db(event)
+                store_alarm_to_db(event, analysis)
                 logger.debug("告警已存储到数据库")
             except Exception as db_error:
                 logger.warning(f"告警存储失败（数据库可能未配置）: {db_error}")
@@ -213,7 +235,7 @@ class AlertService:
             try:
                 from src.web.socketio import broadcast_alarm
                 alarm_data = {
-                    'device_name': event.module_name,
+                    'device_name': getattr(event, 'device_name', None) or event.module_name,
                     'alarm_level': event.level.value,
                     'alarm_text': event.alarm_text,
                     'timestamp': event.timestamp.isoformat(),
@@ -235,6 +257,13 @@ class AlertService:
                 success = self.notifier.send_alarm(event, analysis)
                 if success:
                     logger.info(f"告警推送成功: {event.alarm_text}")
+                    # 更新告警记录的通知状态
+                    try:
+                        from src.alarm_dedup import update_alarm_notified_status
+                        update_alarm_notified_status(event)
+                        logger.debug("告警通知状态已更新")
+                    except Exception as db_error:
+                        logger.warning(f"更新告警通知状态失败: {db_error}")
                 else:
                     logger.error(f"告警推送失败: {event.alarm_text}")
             else:

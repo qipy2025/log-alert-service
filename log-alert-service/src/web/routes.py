@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from src.db.mysql import get_db_session
+from src.db.manager import get_db_interface
 from src.db.cache import (
     set_device_status, get_device_status,
     increment_alarm_count, get_alarm_count
@@ -15,19 +15,23 @@ from src.web.socketio import broadcast_config_update
 
 logger = logging.getLogger(__name__)
 
+def get_db_session():
+    """获取数据库会话（使用数据库管理器）"""
+    return get_db_interface()['get_db_session']()
+
 api_bp = Blueprint('api', __name__)
 
 @api_bp.route('/devices', methods=['GET'])
 def get_devices():
-    """获取所有设备状态"""
-    from src.config_manager import ConfigManager
+    """获取所有设备状态（从数据库读取设备列表）"""
+    from src.device_manager import DeviceManager
 
-    config_manager = ConfigManager('config.yaml')
-    devices_config = config_manager.get('devices', [])
+    device_manager = DeviceManager()
+    devices_config = device_manager.get_all_devices()
     devices = []
 
     for device in devices_config:
-        device_name = device.get('name')
+        device_name = device.get('device_name')
         status_data = get_device_status(device_name)
 
         devices.append({
@@ -36,7 +40,7 @@ def get_devices():
             'last_heartbeat': status_data.get('last_heartbeat'),
             'last_alarm_time': status_data.get('last_alarm_time'),
             'today_alarm_count': get_alarm_count(device_name),
-            'enabled': device.get('enabled', True)
+            'enabled': bool(device.get('enabled', True))
         })
 
     return jsonify({'devices': devices})
@@ -409,7 +413,14 @@ def add_device():
         device = device_manager.add_device({
             'device_name': device_name,
             'log_path': log_path,
-            'enabled': enabled
+            'enabled': enabled,
+            'auto_notify': data.get('auto_notify', False),
+            'polling_interval': data.get('polling_interval', 2),
+            'encoding': data.get('encoding', 'utf-8-sig'),
+            'log_name_mode': data.get('log_name_mode', 'date_subdir'),
+            'smb_username': data.get('smb_username'),
+            'smb_password': data.get('smb_password'),
+            'monitor_days': data.get('monitor_days', 1)
         })
 
         return jsonify({

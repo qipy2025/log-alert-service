@@ -70,15 +70,26 @@ class MultiDeviceWatcher:
         if need_stop:
             self.stop_device(device_name)
 
-        # 构建日志文件路径（添加日期子目录）
-        log_path = self._build_log_path(device_config.get("log_path", ""))
+        # 原始日志根路径（LogWatcher 内部按 log_name_mode 解析具体文件）
+        log_path = device_config.get("log_path", "")
+        log_name_mode = device_config.get("log_name_mode", "date_subdir")
+        monitor_days = device_config.get("monitor_days", 1)
+
+        # 若为 UNC 网络共享且配置了凭据，先建立 net use 会话
+        smb_username = device_config.get("smb_username")
+        if smb_username:
+            from src.network_share import ensure_share_connection, decode_password
+            smb_password = decode_password(device_config.get("smb_password", ""))
+            ensure_share_connection(log_path, smb_username, smb_password)
 
         # 创建 LogWatcher（锁外执行）
         watcher = LogWatcher(
             log_dir=log_path,
             on_alarm=self._create_device_alarm_callback(device_name),
             polling_interval=device_config.get("polling_interval", 2),
-            encoding=device_config.get("encoding", "utf-8-sig")
+            encoding=device_config.get("encoding", "utf-8-sig"),
+            log_name_mode=log_name_mode,
+            monitor_days=monitor_days,
         )
 
         # 创建 DeviceMonitorInfo（锁外执行）
@@ -91,7 +102,7 @@ class MultiDeviceWatcher:
         with self._lock:
             self.device_monitors[device_name] = monitor_info
 
-        logger.info(f"✅ 设备 {device_name} 监控已启动: {log_path}")
+        logger.info(f"✅ 设备 {device_name} 监控已启动: {log_path} (模式: {log_name_mode}, 天数: {monitor_days})")
 
     def stop_device(self, device_name: str):
         """停止单个设备的监控
@@ -207,7 +218,9 @@ class MultiDeviceWatcher:
             告警回调函数
         """
         def callback(event: AlarmEvent):
-            # 设置设备名称（如果没有）
+            # 注入设备配置名（告警归属/飞书卡片/上下文收集使用）
+            event.device_name = device_name
+            # 模块名为空时用设备名兜底
             if not event.module_name:
                 event.module_name = device_name
 

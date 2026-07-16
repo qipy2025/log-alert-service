@@ -46,21 +46,21 @@
               @change="handleLevelsChange"
               class="levels-checkbox"
             >
-              <el-checkbox label="CRITICAL" border class="level-checkbox critical">
+              <el-checkbox value="CRITICAL" border class="level-checkbox critical">
                 <div class="checkbox-content">
                   <el-tag type="danger" effect="dark">CRITICAL</el-tag>
                   <span>严重告警</span>
                   <el-icon style="margin-left: 4px;"><Warning /></el-icon>
                 </div>
               </el-checkbox>
-              <el-checkbox label="WARNING" border class="level-checkbox warning">
+              <el-checkbox value="WARNING" border class="level-checkbox warning">
                 <div class="checkbox-content">
                   <el-tag type="warning" effect="dark">WARNING</el-tag>
                   <span>警告告警</span>
                   <el-icon style="margin-left: 4px;"><InfoFilled /></el-icon>
                 </div>
               </el-checkbox>
-              <el-checkbox label="INFO" border class="level-checkbox info">
+              <el-checkbox value="INFO" border class="level-checkbox info">
                 <div class="checkbox-content">
                   <el-tag type="primary" effect="dark">INFO</el-tag>
                   <span>信息告警</span>

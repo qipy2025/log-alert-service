@@ -1,9 +1,12 @@
 import json
+import logging
 from typing import Optional
 
 import requests
 
 from src.data_models import AlarmEvent, AnalysisResult
+
+logger = logging.getLogger(__name__)
 
 
 SYSTEM_PROMPT = """你是一个设备故障诊断专家。分析以下日志片段，找出告警的根本原因，
@@ -69,10 +72,11 @@ class AIAnalyzer:
         prompt = self._build_prompt(event)
 
         try:
+            logger.info(f"调用AI分析: model={self.model}, 告警={event.alarm_text[:40]}")
             response = requests.post(
                 f"{self.api_base_url}/v1/messages",
                 headers={
-                    "x-api-key": self.api_key,
+                    "Authorization": f"Bearer {self.api_key}",
                     "anthropic-version": "2023-06-01",
                     "Content-Type": "application/json",
                 },
@@ -87,24 +91,27 @@ class AIAnalyzer:
                 },
                 timeout=self.timeout,
             )
+            logger.info(f"AI响应 status={response.status_code}, len={len(response.text)}")
             response.raise_for_status()
             data = response.json()
 
             # 提取响应文本
             content = data.get("content", [])
             if not content:
+                logger.warning(f"AI响应content为空: {str(data)[:200]}")
                 return None
 
             response_text = content[0].get("text", "") if isinstance(content[0], dict) else content[0]
+            logger.info(f"AI响应文本(前100): {response_text[:100]}")
 
             # 解析 JSON
             return self._parse_response(response_text)
 
         except requests.exceptions.RequestException as e:
-            print(f"[AIAnalyzer] API 请求失败: {e}")
+            logger.error(f"AI API请求失败: {e}")
             return None
         except (json.JSONDecodeError, KeyError, IndexError) as e:
-            print(f"[AIAnalyzer] 响应解析失败: {e}, raw: {response_text if 'response_text' in dir() else 'N/A'}")
+            logger.error(f"AI响应解析失败: {e}, raw: {response_text[:200] if 'response_text' in dir() else 'N/A'}")
             return None
 
     def _parse_response(self, text: str) -> Optional[AnalysisResult]:
@@ -118,10 +125,13 @@ class AIAnalyzer:
             text = text.split("```")[1].split("```")[0].strip()
 
         data = json.loads(text)
+        suggestion = data.get("suggestion", "")
+        if isinstance(suggestion, list):
+            suggestion = "\n".join(str(s) for s in suggestion)
         return AnalysisResult(
             root_cause=data.get("root_cause", ""),
             severity=data.get("severity", "warning"),
-            suggestion=data.get("suggestion", ""),
+            suggestion=suggestion,
             related_module=data.get("related_module", ""),
             probable_time_to_resolve=data.get("probable_time_to_resolve", ""),
         )

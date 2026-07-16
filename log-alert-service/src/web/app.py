@@ -49,7 +49,7 @@ def create_app(testing=False):
     CORS(app)
 
     # 初始化SocketIO
-    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
     app.extensions['socketio'] = socketio
 
     # 注册路由

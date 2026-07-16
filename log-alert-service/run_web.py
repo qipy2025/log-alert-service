@@ -33,8 +33,17 @@ def main():
     logger.info(f"WebSocket服务地址: ws://localhost:{port}")
     logger.info(f"API服务地址: http://localhost:{port}/api")
 
-    # 启动服务（使用SocketIO）
+    # 启动服务（使用eventlet服务器）
     try:
+        import eventlet.wsgi
+        import eventlet
+        from eventlet import wsgi
+
+        # 使用eventlet的WSGI服务器
+        listener = eventlet.listen((host, port))
+        wsgi.server(listener, app)
+    except ImportError:
+        # 如果没有eventlet，回退到标准方式
         socketio.run(
             app,
             host=host,

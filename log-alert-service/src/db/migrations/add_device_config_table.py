@@ -17,6 +17,10 @@ def upgrade(session):
             auto_notify BOOLEAN DEFAULT FALSE,
             polling_interval INT DEFAULT 2,
             encoding VARCHAR(20) DEFAULT 'utf-8-sig',
+            log_name_mode VARCHAR(20) DEFAULT 'date_subdir',
+            smb_username VARCHAR(100) NULL,
+            smb_password VARCHAR(200) NULL,
+            monitor_days INT DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             created_by VARCHAR(50) DEFAULT 'system',
@@ -35,6 +39,23 @@ def upgrade(session):
             logger.info("notified 字段已存在，跳过")
         else:
             raise
+
+    # 为 device_config 表添加网络共享认证与日志命名模式字段
+    new_columns = [
+        ("log_name_mode", "VARCHAR(20) DEFAULT 'date_subdir'"),
+        ("smb_username", "VARCHAR(100) NULL"),
+        ("smb_password", "VARCHAR(200) NULL"),
+        ("monitor_days", "INT DEFAULT 1"),
+    ]
+    for col_name, col_def in new_columns:
+        try:
+            session.execute(text(f"ALTER TABLE device_config ADD COLUMN {col_name} {col_def}"))
+            logger.info(f"已为 device_config 表添加 {col_name} 字段")
+        except Exception as e:
+            if "Duplicate column name" in str(e):
+                logger.info(f"{col_name} 字段已存在，跳过")
+            else:
+                raise
 
     session.commit()
     logger.info("数据库迁移完成")

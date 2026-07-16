@@ -20,9 +20,11 @@ ALARM_PATTERNS: dict[AlarmLevel, list[re.Pattern]] = {
     AlarmLevel.CRITICAL: [
         re.compile(r"报警_(?!复位)"),    # "报警_xxx" 但不匹配 "报警复位"
         re.compile(r"异常"),
+        re.compile(r"急停"),             # 急停条件触发等
     ],
     AlarmLevel.WARNING: [
         re.compile(r"预警_"),
+        re.compile(r"失败"),             # 校验失败/条码失败等
     ],
     AlarmLevel.INFO: [
         re.compile(r"报警复位操作"),

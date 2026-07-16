@@ -1,6 +1,6 @@
 from sqlalchemy import Column, BigInteger, String, Text, DateTime, Boolean, Index
 from sqlalchemy.sql import func
-from src.db.mysql import Base
+from src.db.base import Base
 
 class AlarmRecord(Base):
     """告警记录表"""
